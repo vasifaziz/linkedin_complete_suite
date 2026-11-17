@@ -1,0 +1,1060 @@
+{
+  "name": "LinkedIn Content - DB Gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "action"
+            },
+            {
+              "name": "post_id"
+            },
+            {
+              "name": "execution_id"
+            },
+            {
+              "name": "ttl_minutes",
+              "type": "number"
+            },
+            {
+              "name": "entity"
+            },
+            {
+              "name": "record",
+              "type": "object"
+            },
+            {
+              "name": "entity_type"
+            },
+            {
+              "name": "entity_id"
+            },
+            {
+              "name": "audit_action"
+            },
+            {
+              "name": "actor"
+            },
+            {
+              "name": "old_status"
+            },
+            {
+              "name": "new_status"
+            },
+            {
+              "name": "details",
+              "type": "object"
+            },
+            {
+              "name": "workflow_name"
+            },
+            {
+              "name": "step"
+            },
+            {
+              "name": "provider"
+            },
+            {
+              "name": "model"
+            },
+            {
+              "name": "input_tokens",
+              "type": "number"
+            },
+            {
+              "name": "output_tokens",
+              "type": "number"
+            },
+            {
+              "name": "cost_usd",
+              "type": "number"
+            },
+            {
+              "name": "budget_usd",
+              "type": "number"
+            },
+            {
+              "name": "idempotency_key"
+            },
+            {
+              "name": "content_id"
+            },
+            {
+              "name": "charge_no",
+              "type": "number"
+            },
+            {
+              "name": "pricing_version"
+            },
+            {
+              "name": "usage_type"
+            },
+            {
+              "name": "actor_user_id"
+            },
+            {
+              "name": "actor_channel"
+            },
+            {
+              "name": "decision"
+            },
+            {
+              "name": "content_hash"
+            },
+            {
+              "name": "notes"
+            },
+            {
+              "name": "evidence",
+              "type": "object"
+            },
+            {
+              "name": "new_record",
+              "type": "object"
+            },
+            {
+              "name": "destination"
+            },
+            {
+              "name": "slot_label"
+            },
+            {
+              "name": "attempt_id"
+            },
+            {
+              "name": "outcome"
+            },
+            {
+              "name": "linkedin_urn"
+            },
+            {
+              "name": "post_url"
+            },
+            {
+              "name": "error_details"
+            }
+          ]
+        }
+      },
+      "id": "022fefe1-750f-4ff6-bfc4-8d2f5e35fc06",
+      "name": "Gateway Request",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        16,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const REQUIRED = {\n  acquire_lock: ['post_id', 'execution_id'],\n  release_lock: ['post_id', 'execution_id'],\n  log_audit: ['entity_type', 'audit_action', 'execution_id'],\n  sync_draft: ['entity', 'record'],\n  record_cost: ['post_id', 'execution_id', 'step', 'provider', 'model'],\n  check_budget: ['post_id'],\n  record_verification: ['content_id', 'content_hash', 'actor_user_id', 'decision', 'execution_id', 'notes', 'evidence'],\n  record_reviewer_decision: ['content_id', 'content_hash', 'actor_user_id', 'decision', 'execution_id'],\n  record_publisher_authorization: ['content_id', 'content_hash', 'actor_user_id', 'decision', 'execution_id'],\n  record_admin_decision: ['content_id', 'content_hash', 'actor_user_id', 'decision', 'execution_id'],\n  record_revision: ['content_id', 'content_hash', 'new_record', 'actor_user_id', 'execution_id'],\n  claim_publish: ['destination', 'execution_id'],\n  record_publish_result: ['attempt_id', 'execution_id', 'outcome']\n};\n// Deprecated name kept so existing callers keep working; it gets the same draft-only rules.\nconst ALIASES = { sync_record: 'sync_draft' };\nconst STATE_CHANGES = {\n  release_lock: 'release_lock',\n  log_audit: 'log_audit',\n  sync_draft: 'sync_draft',\n  record_verification: 'decision',\n  record_reviewer_decision: 'decision',\n  record_publisher_authorization: 'decision',\n  record_admin_decision: 'decision',\n  record_revision: 'revision',\n  claim_publish: 'claim_publish',\n  record_publish_result: 'publish_result'\n};\nconst DECISIONS = {\n  record_verification: { stage: 'verification', values: { verified: 'Verified', rejected: 'Rejected' } },\n  record_reviewer_decision: { stage: 'reviewer', values: { approved: 'Approved', rejected: 'Rejected', revision_requested: 'Revision Requested' } },\n  record_publisher_authorization: { stage: 'publisher', values: { authorized: 'Authorized', declined: 'Declined' } },\n  record_admin_decision: { stage: 'admin', values: { approved: 'Approved', rejected: 'Rejected' } }\n};\nconst PROTECTED_FIELDS = ['reviewer_name', 'reviewer_decision', 'reviewer_at', 'reviewer_user_id', 'reviewer_notes', 'publisher_name', 'publisher_authorization', 'publisher_at', 'publisher_user_id', 'admin_name', 'admin_approval', 'admin_at', 'admin_user_id', 'approved_hash', 'approved_version', 'approved_at', 'scheduled_for', 'published_at', 'linkedin_urn', 'post_url', 'superseded_by', 'verification_required', 'verified_by_user_id', 'verified_at', 'verification_notes', 'verification_evidence', 'verified_hash', 'verification_outcome'];\nconst PROTECTED_TOPIC_STATUSES = ['approved', 'scheduled', 'publishing', 'published'];\nconst DRAFT_CONTENT_STATUSES = ['Draft', 'Pending Review', 'Needs Human Verification', 'Validation Failed', 'Generation Failed', 'Persistence Failed'];\nconst REVISION_STATUSES = ['Pending Review', 'Needs Human Verification'];\nconst blank = v => v === undefined || v === null || (typeof v === 'string' && v.trim() === '') || (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);\nconst toObject = (v, label) => {\n  let o = v;\n  if (typeof o === 'string') {\n    try { o = JSON.parse(o); } catch (e) { throw new Error(label + ' is not valid JSON'); }\n  }\n  if (!o || typeof o !== 'object' || Array.isArray(o)) throw new Error(label + ' must be an object');\n  return o;\n};\n\nreturn $input.all().map((item, i) => {\n  const r = Object.assign({}, item.json);\n  let action = String(r.action || '').trim().toLowerCase();\n  if (ALIASES[action]) { r.requested_action = action; action = ALIASES[action]; }\n  if (!REQUIRED[action]) throw new Error('DB Gateway: unknown action \"' + r.action + '\"');\n  r.action = action;\n  r.route = STATE_CHANGES[action] ? 'state_change' : action;\n  r.gov_route = STATE_CHANGES[action] || '';\n  r.workflow_name = blank(r.workflow_name) ? '' : String(r.workflow_name);\n  if (action === 'log_audit' && blank(r.entity_id)) r.entity_id = r.post_id;\n  const missing = REQUIRED[action].filter(k => blank(r[k]));\n  if (action === 'log_audit' && blank(r.entity_id)) missing.push('entity_id');\n  if (missing.length) throw new Error('DB Gateway ' + action + ': missing ' + missing.join(', '));\n\n  if (action === 'acquire_lock') {\n    const ttl = blank(r.ttl_minutes) ? 30 : Number(r.ttl_minutes);\n    if (!Number.isInteger(ttl) || ttl < 1 || ttl > 120) throw new Error('DB Gateway acquire_lock: ttl_minutes must be a whole number from 1 to 120');\n    r.ttl_minutes = ttl;\n  }\n\n  if (action === 'sync_draft') {\n    if (!['topic', 'content'].includes(r.entity)) throw new Error('DB Gateway sync_draft: entity must be topic or content');\n    const rec = toObject(r.record, 'DB Gateway sync_draft: record');\n    const blocked = Object.keys(rec).filter(k => PROTECTED_FIELDS.includes(k));\n    if (blocked.length) throw new Error('DB Gateway sync_draft: approval, verification and publishing fields need their own action (' + blocked.join(', ') + ')');\n    const status = String(rec.status || '').trim();\n    if (r.entity === 'topic' && PROTECTED_TOPIC_STATUSES.includes(status.toLowerCase())) throw new Error('DB Gateway sync_draft: topic status \"' + status + '\" can only be set by the approval or publishing actions');\n    if (r.entity === 'content' && status && !DRAFT_CONTENT_STATUSES.includes(status)) throw new Error('DB Gateway sync_draft: content status \"' + status + '\" is not a draft status (allowed: ' + DRAFT_CONTENT_STATUSES.join(', ') + ')');\n    const idKey = r.entity === 'topic' ? 'post_id' : 'content_id';\n    if (blank(rec[idKey])) throw new Error('DB Gateway sync_draft: record.' + idKey + ' is required');\n    if (r.entity === 'content' && rec.post_text !== undefined && String(rec.post_text).length > 1250) throw new Error('DB Gateway sync_draft: post_text is over 1,250 characters');\n    r.record = rec;\n  }\n\n  if (action === 'record_cost') {\n    const cost = Number(r.cost_usd);\n    if (!Number.isFinite(cost) || cost < 0) throw new Error('DB Gateway record_cost: cost_usd must be a number of 0 or more');\n    r.cost_usd = cost;\n    r.input_tokens = Math.max(0, Math.round(Number(r.input_tokens) || 0));\n    r.output_tokens = Math.max(0, Math.round(Number(r.output_tokens) || 0));\n    const usage = String(r.usage_type || 'estimated').trim().toLowerCase();\n    if (!['actual', 'estimated'].includes(usage)) throw new Error('DB Gateway record_cost: usage_type must be actual or estimated');\n    r.usage_type = usage;\n    r.pricing_version = blank(r.pricing_version) ? 'unversioned' : String(r.pricing_version);\n    r.content_id = blank(r.content_id) ? '' : String(r.content_id);\n    r.idempotency_key = blank(r.idempotency_key) ? [r.post_id, r.execution_id, r.step, r.charge_no || 1].join(':') : String(r.idempotency_key);\n  }\n\n  if (DECISIONS[action] || action === 'record_revision') {\n    r.content_hash = String(r.content_hash).trim().toLowerCase();\n    if (!/^[0-9a-f]{64}$/.test(r.content_hash)) throw new Error('DB Gateway ' + action + ': content_hash must be the 64-character SHA-256 hex of the exact post text');\n    r.actor_user_id = String(r.actor_user_id).trim();\n    r.actor_channel = blank(r.actor_channel) ? 'unspecified' : String(r.actor_channel);\n  }\n\n  if (DECISIONS[action]) {\n    const cfg = DECISIONS[action];\n    const key = String(r.decision).trim().toLowerCase().replace(/[ -]+/g, '_');\n    if (!cfg.values[key]) throw new Error('DB Gateway ' + action + ': decision must be one of ' + Object.keys(cfg.values).join(', '));\n    r.stage = cfg.stage;\n    r.decision = key;\n    r.decision_label = cfg.values[key];\n    r.notes = blank(r.notes) ? '' : String(r.notes);\n    r.evidence_json = JSON.stringify(blank(r.evidence) ? {} : (typeof r.evidence === 'string' ? { text: r.evidence } : r.evidence));\n    r.idempotency_key = [r.content_id, cfg.stage, r.content_hash, r.actor_user_id, key].join(':');\n  }\n\n  if (action === 'record_revision') {\n    const nr = toObject(r.new_record, 'DB Gateway record_revision: new_record');\n    const blocked = Object.keys(nr).filter(k => PROTECTED_FIELDS.includes(k) || ['post_id', 'version', 'parent_content_id', 'destination', 'language', 'variation_label'].includes(k));\n    if (blocked.length) throw new Error('DB Gateway record_revision: new_record cannot set ' + blocked.join(', ') + ' (taken from the parent version or set by other actions)');\n    if (blank(nr.content_id)) throw new Error('DB Gateway record_revision: new_record.content_id is required');\n    if (String(nr.content_id) === String(r.content_id)) throw new Error('DB Gateway record_revision: the new version needs a new content_id');\n    const text = String(nr.post_text || '');\n    if (!text.trim()) throw new Error('DB Gateway record_revision: new_record.post_text is required');\n    if (text.length > 1250) throw new Error('DB Gateway record_revision: post_text is ' + text.length + ' characters (max 1,250)');\n    nr.status = blank(nr.status) ? 'Pending Review' : String(nr.status);\n    if (!REVISION_STATUSES.includes(nr.status)) throw new Error('DB Gateway record_revision: new version status must be Pending Review or Needs Human Verification');\n    r.change_summary = blank(nr.status_note) ? '' : String(nr.status_note);\n    r.new_record = nr;\n  }\n\n  if (action === 'claim_publish') {\n    const d = String(r.destination).trim().toLowerCase();\n    if (!['personal', 'company'].includes(d)) throw new Error('DB Gateway claim_publish: destination must be Personal or Company');\n    r.destination = d === 'personal' ? 'Personal' : 'Company';\n    r.slot_label = blank(r.slot_label) ? '' : String(r.slot_label);\n  }\n\n  if (action === 'record_publish_result') {\n    r.attempt_id = String(r.attempt_id).trim().toLowerCase();\n    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(r.attempt_id)) throw new Error('DB Gateway record_publish_result: attempt_id must be the UUID returned by claim_publish');\n    const o = String(r.outcome).trim().toLowerCase();\n    if (!['published', 'failed', 'unknown'].includes(o)) throw new Error('DB Gateway record_publish_result: outcome must be published, failed (LinkedIn explicitly refused) or unknown (timeout or no response)');\n    r.outcome = o;\n    if (o === 'published' && blank(r.linkedin_urn)) throw new Error('DB Gateway record_publish_result: linkedin_urn is required when outcome is published');\n    r.linkedin_urn = blank(r.linkedin_urn) ? '' : String(r.linkedin_urn);\n    r.post_url = blank(r.post_url) ? '' : String(r.post_url);\n    r.error_details = blank(r.error_details) ? '' : String(r.error_details).slice(0, 2000);\n  }\n\n  return { json: r, pairedItem: { item: i } };\n});"
+      },
+      "id": "8beb19bf-a78f-4709-b0ec-4dea5d10fa5a",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        1504
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "acquire_lock"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "acquire_lock"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "record_cost"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "record_cost"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "check_budget"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "check_budget"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "state_change"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "state_change"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2faaa21b-6a14-434b-9cdb-68e43a597e62",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        1440
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH identity_lock AS MATERIALIZED (\n    SELECT 1 AS ok\n    FROM (SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))) l\n),\nexisting AS MATERIALIZED (\n    SELECT slot_no, execution_id, expires_at\n    FROM topic_slots\n    WHERE post_id = $1\n      AND expires_at > now()\n      AND EXISTS (SELECT 1 FROM identity_lock)\n    FOR UPDATE\n),\nrenewed AS (\n    UPDATE topic_slots\n    SET expires_at = now() + make_interval(mins => $3::int)\n    WHERE slot_no = (\n        SELECT slot_no FROM existing WHERE execution_id = $2 LIMIT 1\n    )\n    RETURNING slot_no, expires_at\n),\nclaimed AS (\n    UPDATE topic_slots\n    SET post_id = $1,\n        execution_id = $2,\n        locked_at = now(),\n        expires_at = now() + make_interval(mins => $3::int)\n    WHERE slot_no = (\n        SELECT slot_no\n        FROM topic_slots\n        WHERE (post_id IS NULL OR expires_at <= now())\n          AND NOT EXISTS (SELECT 1 FROM existing)\n        ORDER BY slot_no\n        LIMIT 1\n        FOR UPDATE SKIP LOCKED\n    )\n    AND (SELECT count(*) FROM identity_lock) = 1\n    RETURNING slot_no, expires_at\n)\nSELECT $1::text AS post_id, slot_no, expires_at, 'renewed' AS lock_state FROM renewed\nUNION ALL\nSELECT $1::text, slot_no, expires_at, 'acquired' FROM claimed\nUNION ALL\nSELECT $1::text, slot_no, expires_at, 'locked_by_other'\nFROM existing\nWHERE execution_id IS DISTINCT FROM $2\n  AND NOT EXISTS (SELECT 1 FROM renewed)\nUNION ALL\nSELECT $1::text, NULL, NULL, 'all_slots_busy'\nWHERE NOT EXISTS (SELECT 1 FROM renewed)\n  AND NOT EXISTS (SELECT 1 FROM claimed)\n  AND NOT EXISTS (SELECT 1 FROM existing)",
+        "options": {
+          "queryReplacement": "={{ $json.post_id }}, {{ $json.execution_id }}, {{ $json.ttl_minutes }}"
+        }
+      },
+      "id": "0a375825-3a27-495c-9c07-c2a1f92fc202",
+      "name": "Claim Topic Slot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        800,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "acq",
+              "name": "acquired",
+              "type": "boolean",
+              "value": "={{ [\"acquired\", \"renewed\"].includes(String($json.lock_state || \"\")) }}"
+            },
+            {
+              "id": "wait",
+              "name": "should_wait",
+              "type": "boolean",
+              "value": "={{ String($json.lock_state || \"\") === \"all_slots_busy\" }}"
+            },
+            {
+              "id": "conflict",
+              "name": "lock_conflict",
+              "type": "boolean",
+              "value": "={{ String($json.lock_state || \"\") === \"locked_by_other\" }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "b3318312-febc-481e-b700-65e68ec15d92",
+      "name": "Lock Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1024,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH ledger AS (\n  INSERT INTO cost_ledger (idempotency_key, post_id, execution_id, content_id, step, provider, model, input_tokens, output_tokens, cost_usd, pricing_version, usage_type)\n  VALUES ($1, $2, $3, $4, $5, $6, $7, $8::int, $9::int, $10::numeric, $11, $12)\n  ON CONFLICT (idempotency_key) DO NOTHING\n  RETURNING id, cost_usd\n),\nbudget AS (\n  INSERT INTO topic_budget AS tb (post_id, budget_usd, spent_usd, warning_sent, exceeded_sent, alert_now, updated_at)\n  SELECT $2, 0.50, l.cost_usd,\n    l.cost_usd >= 0.8 * 0.50,\n    l.cost_usd >= 0.50,\n    CASE WHEN l.cost_usd >= 0.50 THEN 'exceeded' WHEN l.cost_usd >= 0.8 * 0.50 THEN 'warning' ELSE NULL END,\n    now()\n  FROM ledger l\n  ON CONFLICT (post_id) DO UPDATE SET\n    spent_usd = tb.spent_usd + EXCLUDED.spent_usd,\n    alert_now = CASE\n      WHEN tb.spent_usd + EXCLUDED.spent_usd >= tb.budget_usd AND NOT tb.exceeded_sent THEN 'exceeded'\n      WHEN tb.spent_usd + EXCLUDED.spent_usd >= 0.8 * tb.budget_usd AND NOT tb.warning_sent AND NOT tb.exceeded_sent THEN 'warning'\n      ELSE NULL END,\n    warning_sent = tb.warning_sent OR tb.spent_usd + EXCLUDED.spent_usd >= 0.8 * tb.budget_usd,\n    exceeded_sent = tb.exceeded_sent OR tb.spent_usd + EXCLUDED.spent_usd >= tb.budget_usd,\n    updated_at = now()\n  RETURNING tb.post_id, tb.budget_usd, tb.spent_usd, tb.alert_now\n),\nunchanged AS (\n  SELECT tb.post_id, tb.budget_usd, tb.spent_usd, NULL::text AS alert_now\n  FROM topic_budget tb\n  WHERE tb.post_id = $2\n    AND NOT EXISTS (SELECT 1 FROM ledger)\n),\nno_budget_row AS (\n  SELECT $2::text AS post_id, 0.50::numeric AS budget_usd, 0::numeric AS spent_usd, NULL::text AS alert_now\n  WHERE NOT EXISTS (SELECT 1 FROM ledger)\n    AND NOT EXISTS (SELECT 1 FROM unchanged)\n),\nb AS (\n  SELECT * FROM budget\n  UNION ALL SELECT * FROM unchanged\n  UNION ALL SELECT * FROM no_budget_row\n)\nSELECT b.post_id,\n  b.budget_usd::float AS budget_usd,\n  b.spent_usd::float AS spent_usd,\n  round(b.spent_usd / NULLIF(b.budget_usd, 0) * 100, 1)::float AS budget_used_pct,\n  CASE WHEN b.spent_usd >= b.budget_usd THEN 'exceeded' WHEN b.spent_usd >= 0.8 * b.budget_usd THEN 'warning' ELSE 'ok' END AS budget_status,\n  COALESCE(b.alert_now, '') AS alert_level,\n  EXISTS (SELECT 1 FROM ledger) AS new_charge,\n  $1::text AS idempotency_key,\n  COALESCE((SELECT id FROM ledger), (SELECT id FROM cost_ledger WHERE idempotency_key = $1 LIMIT 1)) AS ledger_id\nFROM b",
+        "options": {
+          "queryReplacement": "={{ $json.idempotency_key }}, {{ $json.post_id }}, {{ $json.execution_id }}, {{ $json.content_id }}, {{ $json.step }}, {{ $json.provider }}, {{ $json.model }}, {{ $json.input_tokens }}, {{ $json.output_tokens }}, {{ $json.cost_usd }}, {{ $json.pricing_version }}, {{ $json.usage_type }}",
+          "replaceEmptyStrings": true
+        }
+      },
+      "id": "deb67883-8321-46df-9349-c6046b7147c8",
+      "name": "Record Cost",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        800,
+        2496
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.alert_level }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b6a88aa4-b3e9-46c6-bbc1-33dc58415d45",
+      "name": "Budget Alert Needed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1024,
+        2496
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "<__PLACEHOLDER_VALUE__Admin Telegram chat ID for budget alerts__>",
+        "text": "={{ $json.alert_level === 'exceeded' ? '🛑 Budget EXCEEDED' : '⚠️ Budget 80% reached' }}\nTopic: {{ $json.post_id }}\nSpent: ${{ $json.spent_usd.toFixed(3) }} of ${{ $json.budget_usd.toFixed(2) }} ({{ $json.budget_used_pct }}%)",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "eb12a7f0-5d45-489b-9819-9c3fe3b7def4",
+      "name": "Send Budget Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1248,
+        2416
+      ],
+      "webhookId": "392cd1bb-7180-47c0-8d9b-f66716f3dcc4",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "post_id",
+              "type": "string",
+              "value": "={{ $('Record Cost').item.json.post_id }}"
+            },
+            {
+              "id": "c2",
+              "name": "spent_usd",
+              "type": "number",
+              "value": "={{ $('Record Cost').item.json.spent_usd }}"
+            },
+            {
+              "id": "c3",
+              "name": "budget_usd",
+              "type": "number",
+              "value": "={{ $('Record Cost').item.json.budget_usd }}"
+            },
+            {
+              "id": "c4",
+              "name": "budget_used_pct",
+              "type": "number",
+              "value": "={{ $('Record Cost').item.json.budget_used_pct }}"
+            },
+            {
+              "id": "c5",
+              "name": "budget_status",
+              "type": "string",
+              "value": "={{ $('Record Cost').item.json.budget_status }}"
+            },
+            {
+              "id": "c6",
+              "name": "alert_level",
+              "type": "string",
+              "value": "={{ $('Record Cost').item.json.alert_level }}"
+            },
+            {
+              "id": "c7",
+              "name": "stop_processing",
+              "type": "boolean",
+              "value": "={{ $('Record Cost').item.json.budget_status === 'exceeded' }}"
+            },
+            {
+              "id": "c8",
+              "name": "new_charge",
+              "type": "boolean",
+              "value": "={{ $(\"Record Cost\").item.json.new_charge }}"
+            },
+            {
+              "id": "c9",
+              "name": "idempotency_key",
+              "type": "string",
+              "value": "={{ $(\"Record Cost\").item.json.idempotency_key }}"
+            },
+            {
+              "id": "c10",
+              "name": "ledger_id",
+              "type": "string",
+              "value": "={{ String($(\"Record Cost\").item.json.ledger_id ?? \"\") }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8725615a-7411-4a51-a695-acda4a415860",
+      "name": "Cost Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1472,
+        2496
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT $1::text AS post_id,\n  COALESCE(tb.budget_usd, 0.50)::float AS budget_usd,\n  COALESCE(tb.spent_usd, 0)::float AS spent_usd,\n  round(COALESCE(tb.spent_usd, 0) / NULLIF(COALESCE(tb.budget_usd, 0.50), 0) * 100, 1)::float AS budget_used_pct,\n  CASE\n    WHEN COALESCE(tb.spent_usd, 0) >= COALESCE(tb.budget_usd, 0.50) THEN 'exceeded'\n    WHEN COALESCE(tb.spent_usd, 0) >= 0.8 * COALESCE(tb.budget_usd, 0.50) THEN 'warning'\n    ELSE 'ok'\n  END AS budget_status\nFROM (SELECT 1) d\nLEFT JOIN topic_budget tb ON tb.post_id = $1",
+        "options": {
+          "queryReplacement": "={{ $json.post_id }}"
+        }
+      },
+      "id": "d308b0a3-4d20-43c8-b6e0-bf8738626d0b",
+      "name": "Read Topic Budget",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        800,
+        2848
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1",
+              "name": "stop_processing",
+              "type": "boolean",
+              "value": "={{ $json.budget_status === \"exceeded\" }}"
+            },
+            {
+              "id": "b2",
+              "name": "alert_level",
+              "type": "string",
+              "value": "={{ $json.budget_status === \"ok\" ? \"\" : $json.budget_status }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "b6300747-694c-4b05-b452-c4e4d160d58b",
+      "name": "Budget Check Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1024,
+        2848
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.gov_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "release_lock"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "release_lock"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.gov_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "log_audit"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "log_audit"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.gov_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "sync_draft"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "sync_draft"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.gov_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "decision"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "decision"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.gov_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "revision"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "revision"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.gov_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "claim_publish"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "claim_publish"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.gov_route }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "publish_result"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "publish_result"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "97d5f81e-af58-4d65-827b-7485e0abd1d4",
+      "name": "Route State Change",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        800,
+        1264
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH released AS (\n    UPDATE topic_slots\n    SET post_id = NULL,\n        execution_id = NULL,\n        locked_at = NULL,\n        expires_at = NULL\n    WHERE post_id = $1\n      AND execution_id = $2\n    RETURNING slot_no\n),\nnot_owned_audit AS (\n    INSERT INTO audit_log (entity_type, entity_id, action, actor, old_status, new_status, details, workflow_name, execution_id)\n    SELECT 'topic', $1, 'lock_release_not_owned', 'system', NULL, NULL,\n           jsonb_build_object('requested_by_execution', $2::text, 'note', 'No lock owned by this execution was found, so nothing was released'),\n           'LinkedIn Content - DB Gateway', $2\n    WHERE NOT EXISTS (SELECT 1 FROM released)\n    RETURNING id\n)\nSELECT $1::text AS post_id,\n       (SELECT count(*) FROM released)::int AS released_slots,\n       EXISTS (SELECT 1 FROM released) AS released,\n       NOT EXISTS (SELECT 1 FROM released) AS ownership_mismatch,\n       (SELECT id FROM not_owned_audit) AS mismatch_audit_id",
+        "options": {
+          "queryReplacement": "={{ $json.post_id }}, {{ $json.execution_id }}"
+        }
+      },
+      "id": "f3996db0-89d8-465c-a492-54864a9e672b",
+      "name": "Release Topic Slot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        992,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_log (entity_type, entity_id, action, actor, old_status, new_status, details, workflow_name, execution_id)\nVALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::jsonb, '{}'::jsonb), $8, $9)\nRETURNING id AS audit_id, created_at",
+        "options": {
+          "queryReplacement": "={{ $json.entity_type }}, {{ $json.entity_id }}, {{ $json.audit_action }}, {{ $json.actor || \"system\" }}, {{ $json.old_status || \"\" }}, {{ $json.new_status || \"\" }}, {{ JSON.stringify($json.details || {}) }}, {{ $json.workflow_name || \"\" }}, {{ $json.execution_id }}",
+          "replaceEmptyStrings": true
+        }
+      },
+      "id": "bc9c038a-b870-405e-a810-2c743929e505",
+      "name": "Write Audit Entry",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        992,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH t AS (\n  INSERT INTO topics AS x (post_id, topic, destination, language, content_pillar, priority, notes, status, sources_found, research_attempts, last_error, created_at, updated_at)\n  SELECT r.post_id, r.topic, r.destination, r.language, r.content_pillar, r.priority, r.notes, r.status, r.sources_found, r.research_attempts, r.last_error, now(), now()\n  FROM jsonb_populate_record(NULL::topics, $2::jsonb) r\n  WHERE $1 = 'topic'\n  ON CONFLICT (post_id) DO UPDATE SET\n    topic = CASE WHEN jsonb_exists($2::jsonb, 'topic') THEN EXCLUDED.topic ELSE x.topic END,\n    destination = CASE WHEN jsonb_exists($2::jsonb, 'destination') THEN EXCLUDED.destination ELSE x.destination END,\n    language = CASE WHEN jsonb_exists($2::jsonb, 'language') THEN EXCLUDED.language ELSE x.language END,\n    content_pillar = CASE WHEN jsonb_exists($2::jsonb, 'content_pillar') THEN EXCLUDED.content_pillar ELSE x.content_pillar END,\n    priority = CASE WHEN jsonb_exists($2::jsonb, 'priority') THEN EXCLUDED.priority ELSE x.priority END,\n    notes = CASE WHEN jsonb_exists($2::jsonb, 'notes') THEN EXCLUDED.notes ELSE x.notes END,\n    status = CASE WHEN jsonb_exists($2::jsonb, 'status') THEN EXCLUDED.status ELSE x.status END,\n    sources_found = CASE WHEN jsonb_exists($2::jsonb, 'sources_found') THEN EXCLUDED.sources_found ELSE x.sources_found END,\n    research_attempts = CASE WHEN jsonb_exists($2::jsonb, 'research_attempts') THEN EXCLUDED.research_attempts ELSE x.research_attempts END,\n    last_error = CASE WHEN jsonb_exists($2::jsonb, 'last_error') THEN EXCLUDED.last_error ELSE x.last_error END,\n    updated_at = now()\n  RETURNING x.post_id AS record_id\n),\nc AS (\n  INSERT INTO content_versions AS y (content_id, post_id, version, parent_content_id, destination, language, variation_label, post_text, char_count, status, risk_level, admin_approval_required, risk_notes, risk_flags, risk_hash, risk_checked_at, risk_review_status, approval_eligible, verification_required, status_note, created_at, updated_at)\n  SELECT r.content_id, r.post_id, r.version, r.parent_content_id, r.destination, r.language, r.variation_label, r.post_text, r.char_count, r.status, r.risk_level, COALESCE(r.admin_approval_required, false), r.risk_notes, r.risk_flags, r.risk_hash, r.risk_checked_at, r.risk_review_status,\n    COALESCE(r.approval_eligible, false) AND COALESCE(r.status, '') <> 'Needs Human Verification' AND COALESCE(r.risk_review_status, '') <> 'Needs Human Verification',\n    COALESCE(r.status, '') = 'Needs Human Verification' OR COALESCE(r.risk_review_status, '') = 'Needs Human Verification',\n    r.status_note, now(), now()\n  FROM jsonb_populate_record(NULL::content_versions, $2::jsonb) r\n  WHERE $1 = 'content'\n  ON CONFLICT (content_id) DO UPDATE SET\n    post_id = CASE WHEN jsonb_exists($2::jsonb, 'post_id') THEN EXCLUDED.post_id ELSE y.post_id END,\n    version = CASE WHEN jsonb_exists($2::jsonb, 'version') THEN EXCLUDED.version ELSE y.version END,\n    parent_content_id = CASE WHEN jsonb_exists($2::jsonb, 'parent_content_id') THEN EXCLUDED.parent_content_id ELSE y.parent_content_id END,\n    destination = CASE WHEN jsonb_exists($2::jsonb, 'destination') THEN EXCLUDED.destination ELSE y.destination END,\n    language = CASE WHEN jsonb_exists($2::jsonb, 'language') THEN EXCLUDED.language ELSE y.language END,\n    variation_label = CASE WHEN jsonb_exists($2::jsonb, 'variation_label') THEN EXCLUDED.variation_label ELSE y.variation_label END,\n    post_text = CASE WHEN jsonb_exists($2::jsonb, 'post_text') THEN EXCLUDED.post_text ELSE y.post_text END,\n    char_count = CASE WHEN jsonb_exists($2::jsonb, 'char_count') THEN EXCLUDED.char_count ELSE y.char_count END,\n    status = CASE WHEN y.status = 'Needs Human Verification' THEN y.status WHEN jsonb_exists($2::jsonb, 'status') THEN EXCLUDED.status ELSE y.status END,\n    risk_level = CASE WHEN jsonb_exists($2::jsonb, 'risk_level') THEN EXCLUDED.risk_level ELSE y.risk_level END,\n    admin_approval_required = CASE WHEN jsonb_exists($2::jsonb, 'admin_approval_required') THEN EXCLUDED.admin_approval_required ELSE y.admin_approval_required END,\n    risk_notes = CASE WHEN jsonb_exists($2::jsonb, 'risk_notes') THEN EXCLUDED.risk_notes ELSE y.risk_notes END,\n    risk_flags = CASE WHEN jsonb_exists($2::jsonb, 'risk_flags') THEN EXCLUDED.risk_flags ELSE y.risk_flags END,\n    risk_hash = CASE WHEN jsonb_exists($2::jsonb, 'risk_hash') THEN EXCLUDED.risk_hash ELSE y.risk_hash END,\n    risk_checked_at = CASE WHEN jsonb_exists($2::jsonb, 'risk_checked_at') THEN EXCLUDED.risk_checked_at ELSE y.risk_checked_at END,\n    risk_review_status = CASE WHEN jsonb_exists($2::jsonb, 'risk_review_status') THEN EXCLUDED.risk_review_status ELSE y.risk_review_status END,\n    approval_eligible = CASE WHEN y.status = 'Needs Human Verification' OR EXCLUDED.verification_required THEN false WHEN jsonb_exists($2::jsonb, 'approval_eligible') THEN EXCLUDED.approval_eligible ELSE y.approval_eligible END,\n    verification_required = y.verification_required OR EXCLUDED.verification_required,\n    status_note = CASE WHEN jsonb_exists($2::jsonb, 'status_note') THEN EXCLUDED.status_note ELSE y.status_note END,\n    updated_at = now()\n  WHERE y.approved_hash IS NULL\n    AND y.published_at IS NULL\n    AND y.superseded_by IS NULL\n    AND y.reviewer_user_id IS NULL\n    AND y.verified_by_user_id IS NULL\n    AND COALESCE(y.reviewer_decision, '') = ''\n    AND COALESCE(y.status, '') IN ('', 'Draft', 'Pending Review', 'Needs Human Verification', 'Validation Failed', 'Generation Failed', 'Persistence Failed')\n  RETURNING y.content_id AS record_id\n)\nSELECT $1::text AS entity,\n  COALESCE((SELECT record_id FROM t LIMIT 1), (SELECT record_id FROM c LIMIT 1)) AS record_id,\n  ((SELECT count(*) FROM t) + (SELECT count(*) FROM c))::int AS rows_written,\n  ((SELECT count(*) FROM t) + (SELECT count(*) FROM c)) > 0 AS success,\n  CASE WHEN ((SELECT count(*) FROM t) + (SELECT count(*) FROM c)) = 0 THEN 'Record is past draft stage (verified, decided, approved, superseded or publishing) - use the purpose-specific action' ELSE '' END AS blocked_reason",
+        "options": {
+          "queryReplacement": "={{ $json.entity }}, {{ JSON.stringify($json.record) }}"
+        }
+      },
+      "id": "eef4a00c-344a-4a1d-b64f-3a2655115639",
+      "name": "Sync Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        992,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH cur AS MATERIALIZED (\n  SELECT cv.*, encode(sha256(convert_to(COALESCE(cv.post_text, ''), 'UTF8')), 'hex') AS live_hash\n  FROM content_versions cv\n  WHERE cv.content_id = $1\n  FOR UPDATE\n),\nactor AS MATERIALIZED (\n  SELECT u.user_id, bool_or(a.can_self_approve) AS can_self_approve\n  FROM users u\n  JOIN user_role_assignments a ON a.user_id = u.user_id AND a.active\n  JOIN cur ON a.destination IN (cur.destination, 'Both')\n  WHERE u.user_id = $5\n    AND u.active\n    AND (a.role = $2::text OR ($2::text = 'verification' AND a.role IN ('verifier', 'admin')))\n  GROUP BY u.user_id\n),\nprior AS (\n  SELECT id FROM approval_events WHERE idempotency_key = $10\n),\nchk AS MATERIALIZED (\n  SELECT cur.content_id, cur.version, cur.status AS old_status, cur.live_hash,\n    CASE\n      WHEN EXISTS (SELECT 1 FROM prior) THEN 'duplicate'\n      WHEN cur.content_id IS NULL THEN 'not_found'\n      WHEN cur.superseded_by IS NOT NULL OR cur.status = 'Superseded' THEN 'superseded'\n      WHEN cur.live_hash <> $4::text THEN 'hash_mismatch'\n      WHEN NOT EXISTS (SELECT 1 FROM actor) THEN 'actor_not_authorized'\n      WHEN $2::text = 'verification' AND cur.status <> 'Needs Human Verification' THEN 'invalid_transition'\n      WHEN $2::text = 'reviewer' AND cur.status <> 'Pending Review' THEN 'invalid_transition'\n      WHEN $2::text = 'publisher' AND cur.status <> 'Reviewer Approved' THEN 'invalid_transition'\n      WHEN $2::text = 'admin' AND cur.status <> 'Awaiting Admin Approval' THEN 'invalid_transition'\n      WHEN $2::text = 'reviewer' AND $3::text = 'approved' AND NOT cur.approval_eligible THEN 'not_approval_eligible'\n      WHEN $2::text <> 'verification' AND $3::text IN ('approved', 'authorized') AND cur.verification_required\n           AND (cur.verification_outcome IS DISTINCT FROM 'Verified' OR cur.verified_hash IS DISTINCT FROM cur.live_hash) THEN 'human_verification_required'\n      WHEN $2::text IN ('publisher', 'admin') AND $5::text IN (COALESCE(cur.reviewer_user_id, ''), COALESCE(cur.publisher_user_id, ''))\n           AND NOT COALESCE((SELECT can_self_approve FROM actor), false) THEN 'self_approval_blocked'\n      WHEN $2::text IN ('publisher', 'admin') AND char_length(COALESCE(cur.post_text, '')) > 1250 THEN 'over_character_limit'\n      ELSE 'ok'\n    END AS outcome,\n    CASE\n      WHEN $2::text = 'verification' AND $3::text = 'verified' THEN 'Pending Review'\n      WHEN $2::text = 'reviewer' AND $3::text = 'approved' THEN 'Reviewer Approved'\n      WHEN $2::text = 'reviewer' AND $3::text = 'revision_requested' THEN 'Revision Requested'\n      WHEN $2::text = 'publisher' AND $3::text = 'authorized' AND cur.admin_approval_required THEN 'Awaiting Admin Approval'\n      WHEN $2::text = 'publisher' AND $3::text = 'authorized' THEN 'Approved - Ready to Schedule'\n      WHEN $2::text = 'admin' AND $3::text = 'approved' THEN 'Approved - Ready to Schedule'\n      ELSE 'Rejected'\n    END AS next_status\n  FROM (SELECT 1) d\n  LEFT JOIN cur ON true\n),\nupd AS (\n  UPDATE content_versions cv SET\n    status = chk.next_status,\n    approval_eligible = CASE WHEN $2::text = 'verification' AND $3::text = 'verified' THEN true ELSE cv.approval_eligible END,\n    verified_by_user_id = CASE WHEN $2::text = 'verification' THEN $5::text ELSE cv.verified_by_user_id END,\n    verified_at = CASE WHEN $2::text = 'verification' THEN now() ELSE cv.verified_at END,\n    verification_notes = CASE WHEN $2::text = 'verification' THEN $6::text ELSE cv.verification_notes END,\n    verification_evidence = CASE WHEN $2::text = 'verification' THEN COALESCE($7::jsonb, '{}'::jsonb) ELSE cv.verification_evidence END,\n    verified_hash = CASE WHEN $2::text = 'verification' THEN chk.live_hash ELSE cv.verified_hash END,\n    verification_outcome = CASE WHEN $2::text = 'verification' THEN $12::text ELSE cv.verification_outcome END,\n    reviewer_user_id = CASE WHEN $2::text = 'reviewer' THEN $5::text ELSE cv.reviewer_user_id END,\n    reviewer_decision = CASE WHEN $2::text = 'reviewer' THEN $12::text ELSE cv.reviewer_decision END,\n    reviewer_notes = CASE WHEN $2::text = 'reviewer' THEN $6::text ELSE cv.reviewer_notes END,\n    reviewer_at = CASE WHEN $2::text = 'reviewer' THEN now() ELSE cv.reviewer_at END,\n    publisher_user_id = CASE WHEN $2::text = 'publisher' THEN $5::text ELSE cv.publisher_user_id END,\n    publisher_authorization = CASE WHEN $2::text = 'publisher' THEN $12::text ELSE cv.publisher_authorization END,\n    publisher_at = CASE WHEN $2::text = 'publisher' THEN now() ELSE cv.publisher_at END,\n    admin_user_id = CASE WHEN $2::text = 'admin' THEN $5::text ELSE cv.admin_user_id END,\n    admin_approval = CASE WHEN $2::text = 'admin' THEN $12::text ELSE cv.admin_approval END,\n    admin_at = CASE WHEN $2::text = 'admin' THEN now() ELSE cv.admin_at END,\n    approved_hash = CASE WHEN chk.next_status = 'Approved - Ready to Schedule' THEN chk.live_hash ELSE cv.approved_hash END,\n    approved_version = CASE WHEN chk.next_status = 'Approved - Ready to Schedule' THEN cv.version ELSE cv.approved_version END,\n    approved_at = CASE WHEN chk.next_status = 'Approved - Ready to Schedule' THEN now() ELSE cv.approved_at END,\n    updated_at = now()\n  FROM chk\n  WHERE cv.content_id = chk.content_id\n    AND chk.outcome = 'ok'\n  RETURNING cv.content_id\n),\nev AS (\n  INSERT INTO approval_events (idempotency_key, content_id, version, content_hash, stage, decision, actor_user_id, actor_channel, notes, evidence, old_status, new_status, execution_id, workflow_name)\n  SELECT $10, chk.content_id, chk.version, chk.live_hash, $2, $12, $5, $11, $6, COALESCE($7::jsonb, '{}'::jsonb), chk.old_status, chk.next_status, $8, $9\n  FROM chk\n  WHERE chk.outcome = 'ok'\n  ON CONFLICT (idempotency_key) DO NOTHING\n  RETURNING id\n),\naud AS (\n  INSERT INTO audit_log (entity_type, entity_id, action, actor, old_status, new_status, details, workflow_name, execution_id)\n  SELECT 'content', $1, $2::text || CASE WHEN chk.outcome = 'ok' THEN '_decision' ELSE '_decision_refused' END, $5, chk.old_status,\n    CASE WHEN chk.outcome = 'ok' THEN chk.next_status ELSE chk.old_status END,\n    jsonb_build_object('decision', $12::text, 'outcome', chk.outcome, 'content_hash', $4::text, 'actor_channel', $11::text),\n    $9, $8\n  FROM chk\n  RETURNING id\n)\nSELECT $1::text AS content_id,\n  $2::text AS stage,\n  chk.outcome,\n  chk.outcome IN ('ok', 'duplicate') AS success,\n  chk.outcome = 'duplicate' AS duplicate,\n  chk.old_status,\n  CASE WHEN chk.outcome = 'ok' THEN chk.next_status ELSE chk.old_status END AS new_status,\n  CASE WHEN chk.outcome = 'ok' AND chk.next_status = 'Approved - Ready to Schedule' THEN chk.live_hash END AS approved_hash,\n  (SELECT id FROM ev) AS approval_event_id,\n  (SELECT id FROM aud) AS audit_id\nFROM chk",
+        "options": {
+          "queryReplacement": "={{ $json.content_id }}, {{ $json.stage }}, {{ $json.decision }}, {{ $json.content_hash }}, {{ $json.actor_user_id }}, {{ $json.notes }}, {{ $json.evidence_json }}, {{ $json.execution_id }}, {{ $json.workflow_name }}, {{ $json.idempotency_key }}, {{ $json.actor_channel }}, {{ $json.decision_label }}",
+          "replaceEmptyStrings": true
+        }
+      },
+      "id": "358bef5b-a287-4587-bbeb-64374ee97007",
+      "name": "Record Approval Decision",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        992,
+        1488
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH old AS MATERIALIZED (\n  SELECT cv.*, encode(sha256(convert_to(COALESCE(cv.post_text, ''), 'UTF8')), 'hex') AS live_hash\n  FROM content_versions cv\n  WHERE cv.content_id = $1\n  FOR UPDATE\n),\nnr AS MATERIALIZED (\n  SELECT * FROM jsonb_populate_record(NULL::content_versions, $3::jsonb)\n),\nactor AS MATERIALIZED (\n  SELECT u.user_id\n  FROM users u\n  JOIN user_role_assignments a ON a.user_id = u.user_id AND a.active AND a.role IN ('reviewer', 'admin')\n  JOIN old ON a.destination IN (old.destination, 'Both')\n  WHERE u.user_id = $4\n    AND u.active\n  LIMIT 1\n),\nchk AS MATERIALIZED (\n  SELECT old.content_id AS old_id, old.status AS old_status, nr.content_id AS new_id,\n    (COALESCE(old.verification_required, false) OR COALESCE(nr.status, '') = 'Needs Human Verification' OR COALESCE(nr.risk_review_status, '') = 'Needs Human Verification') AS needs_verification,\n    CASE\n      WHEN old.content_id IS NULL THEN 'not_found'\n      WHEN old.superseded_by IS NOT NULL OR old.status = 'Superseded' THEN 'already_superseded'\n      WHEN old.published_at IS NOT NULL OR old.status IN ('Publishing', 'Published', 'Reconciliation Required') THEN 'locked_for_publishing'\n      WHEN old.live_hash <> $2::text THEN 'hash_mismatch'\n      WHEN NOT EXISTS (SELECT 1 FROM actor) THEN 'actor_not_authorized'\n      WHEN EXISTS (SELECT 1 FROM content_versions x WHERE x.content_id = nr.content_id) THEN 'new_content_id_exists'\n      WHEN EXISTS (SELECT 1 FROM content_versions x WHERE x.parent_content_id = old.content_id) THEN 'revision_already_exists'\n      ELSE 'ok'\n    END AS outcome\n  FROM (SELECT 1) d\n  LEFT JOIN old ON true\n  LEFT JOIN nr ON true\n),\nins AS (\n  INSERT INTO content_versions (content_id, post_id, version, parent_content_id, destination, language, variation_label, post_text, char_count, status, risk_level, admin_approval_required, risk_notes, risk_flags, risk_hash, risk_checked_at, risk_review_status, approval_eligible, verification_required, status_note, created_at, updated_at)\n  SELECT nr.content_id, old.post_id, COALESCE(old.version, 1) + 1, old.content_id, old.destination, old.language, old.variation_label,\n    nr.post_text, char_length(nr.post_text),\n    CASE WHEN chk.needs_verification THEN 'Needs Human Verification' ELSE 'Pending Review' END,\n    nr.risk_level,\n    COALESCE(nr.admin_approval_required, false) OR COALESCE(old.admin_approval_required, false),\n    nr.risk_notes, nr.risk_flags, nr.risk_hash, nr.risk_checked_at, nr.risk_review_status,\n    COALESCE(nr.approval_eligible, false) AND NOT chk.needs_verification,\n    chk.needs_verification,\n    COALESCE(nr.status_note, 'Revision of ' || old.content_id),\n    now(), now()\n  FROM old CROSS JOIN nr CROSS JOIN chk\n  WHERE chk.outcome = 'ok'\n  RETURNING content_id, version, status\n),\nsup AS (\n  UPDATE content_versions cv\n  SET status = 'Superseded',\n      superseded_by = (SELECT content_id FROM ins),\n      status_note = 'Replaced by ' || (SELECT content_id FROM ins),\n      updated_at = now()\n  WHERE cv.content_id = $1\n    AND EXISTS (SELECT 1 FROM ins)\n  RETURNING cv.content_id\n),\naud AS (\n  INSERT INTO audit_log (entity_type, entity_id, action, actor, old_status, new_status, details, workflow_name, execution_id)\n  SELECT 'content', $1, CASE WHEN chk.outcome = 'ok' THEN 'revision_created' ELSE 'revision_refused' END, $4, chk.old_status,\n    CASE WHEN chk.outcome = 'ok' THEN 'Superseded' ELSE chk.old_status END,\n    jsonb_build_object('outcome', chk.outcome, 'new_content_id', chk.new_id, 'previous_hash', $2::text, 'change_summary', $7::text, 'approvals_reset', chk.outcome = 'ok'),\n    $6, $5\n  FROM chk\n  RETURNING id\n)\nSELECT $1::text AS old_content_id,\n  chk.new_id AS new_content_id,\n  chk.outcome,\n  chk.outcome = 'ok' AS success,\n  (SELECT version FROM ins) AS new_version,\n  (SELECT status FROM ins) AS new_status,\n  EXISTS (SELECT 1 FROM sup) AS old_superseded,\n  (SELECT id FROM aud) AS audit_id\nFROM chk",
+        "options": {
+          "queryReplacement": "={{ $json.content_id }}, {{ $json.content_hash }}, {{ JSON.stringify($json.new_record) }}, {{ $json.actor_user_id }}, {{ $json.execution_id }}, {{ $json.workflow_name }}, {{ $json.change_summary }}",
+          "replaceEmptyStrings": true
+        }
+      },
+      "id": "064c0d6b-867b-4917-8321-4d6f6d644328",
+      "name": "Create New Version",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        992,
+        1680
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH ctl AS MATERIALIZED (\n  SELECT COALESCE((SELECT paused FROM publishing_controls WHERE id = 1), true) AS paused\n),\ndest_busy AS MATERIALIZED (\n  SELECT EXISTS (SELECT 1 FROM publishing_attempts WHERE destination = $1 AND status = 'Publishing') AS busy\n),\ncand AS MATERIALIZED (\n  SELECT cv.content_id, cv.version, cv.post_id, cv.destination, cv.language, cv.post_text, cv.status, cv.approved_hash, cv.scheduled_for\n  FROM content_versions cv\n  WHERE cv.destination = $1\n    AND NOT (SELECT paused FROM ctl)\n    AND NOT (SELECT busy FROM dest_busy)\n    AND cv.status IN ('Approved - Ready to Schedule', 'Scheduled')\n    AND (cv.scheduled_for IS NULL OR cv.scheduled_for <= now())\n    AND cv.superseded_by IS NULL\n    AND cv.published_at IS NULL\n    AND cv.approval_eligible\n    AND cv.approved_version = cv.version\n    AND cv.approved_hash = encode(sha256(convert_to(COALESCE(cv.post_text, ''), 'UTF8')), 'hex')\n    AND cv.reviewer_user_id IS NOT NULL\n    AND cv.publisher_user_id IS NOT NULL\n    AND (NOT cv.admin_approval_required OR cv.admin_user_id IS NOT NULL)\n    AND (NOT cv.verification_required OR (cv.verification_outcome = 'Verified' AND cv.verified_hash = cv.approved_hash))\n    AND char_length(COALESCE(cv.post_text, '')) BETWEEN 1 AND 1250\n    AND NOT EXISTS (\n      SELECT 1 FROM publishing_attempts pa\n      WHERE pa.content_id = cv.content_id\n        AND pa.status IN ('Publishing', 'Unknown - Reconciliation Required', 'Published')\n    )\n  ORDER BY cv.scheduled_for NULLS LAST, cv.approved_at, cv.content_id\n  LIMIT 1\n  FOR UPDATE SKIP LOCKED\n),\natt AS (\n  INSERT INTO publishing_attempts (content_id, version, destination, execution_id, request_hash, slot_label, status, claimed_at, updated_at)\n  SELECT content_id, version, destination, $2, approved_hash, $3, 'Publishing', now(), now()\n  FROM cand\n  RETURNING attempt_id, content_id\n),\nupd AS (\n  UPDATE content_versions cv\n  SET status = 'Publishing', updated_at = now()\n  FROM att\n  WHERE cv.content_id = att.content_id\n  RETURNING cv.content_id\n),\naud AS (\n  INSERT INTO audit_log (entity_type, entity_id, action, actor, old_status, new_status, details, workflow_name, execution_id)\n  SELECT 'content', cand.content_id, 'publish_claimed', 'system', cand.status, 'Publishing',\n    jsonb_build_object('attempt_id', att.attempt_id, 'slot', $3::text, 'destination', $1::text, 'content_hash', cand.approved_hash),\n    $4, $2\n  FROM cand\n  JOIN att ON att.content_id = cand.content_id\n  RETURNING id\n)\nSELECT $1::text AS destination,\n  EXISTS (SELECT 1 FROM att) AS claimed,\n  CASE\n    WHEN (SELECT paused FROM ctl) THEN 'publishing_paused'\n    WHEN (SELECT busy FROM dest_busy) THEN 'destination_busy'\n    WHEN EXISTS (SELECT 1 FROM att) THEN 'claimed'\n    ELSE 'no_eligible_content'\n  END AS claim_state,\n  (SELECT attempt_id::text FROM att) AS attempt_id,\n  cand.content_id,\n  cand.post_id,\n  cand.version,\n  cand.language,\n  cand.post_text,\n  cand.approved_hash AS content_hash,\n  cand.scheduled_for\nFROM (SELECT 1) d\nLEFT JOIN cand ON true",
+        "options": {
+          "queryReplacement": "={{ $json.destination }}, {{ $json.execution_id }}, {{ $json.slot_label }}, {{ $json.workflow_name }}",
+          "replaceEmptyStrings": true
+        }
+      },
+      "id": "13e73e16-9cef-459a-a48d-ef09c247ec3c",
+      "name": "Claim Publish Slot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        992,
+        1872
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH att AS MATERIALIZED (\n  SELECT * FROM publishing_attempts WHERE attempt_id = $1::uuid FOR UPDATE\n),\nchk AS MATERIALIZED (\n  SELECT att.attempt_id, att.content_id, att.status AS old_status,\n    CASE\n      WHEN att.attempt_id IS NULL THEN 'not_found'\n      WHEN att.execution_id IS DISTINCT FROM $2::text THEN 'ownership_mismatch'\n      WHEN att.status = 'Published' AND $3::text = 'published' AND att.linkedin_urn = $4::text THEN 'duplicate'\n      WHEN att.status <> 'Publishing' THEN 'invalid_transition'\n      ELSE 'ok'\n    END AS outcome,\n    CASE $3::text WHEN 'published' THEN 'Published' WHEN 'failed' THEN 'Failed' ELSE 'Unknown - Reconciliation Required' END AS attempt_status,\n    CASE $3::text WHEN 'published' THEN 'Published' WHEN 'failed' THEN 'Publish Failed' ELSE 'Reconciliation Required' END AS content_status\n  FROM (SELECT 1) d\n  LEFT JOIN att ON true\n),\nua AS (\n  UPDATE publishing_attempts pa\n  SET status = chk.attempt_status,\n      linkedin_urn = $4,\n      post_url = $5,\n      error_details = $6,\n      finished_at = now(),\n      updated_at = now()\n  FROM chk\n  WHERE pa.attempt_id = chk.attempt_id\n    AND chk.outcome = 'ok'\n  RETURNING pa.attempt_id\n),\nuc AS (\n  UPDATE content_versions cv\n  SET status = chk.content_status,\n      published_at = CASE WHEN $3::text = 'published' THEN now() ELSE cv.published_at END,\n      linkedin_urn = CASE WHEN $3::text = 'published' THEN $4::text ELSE cv.linkedin_urn END,\n      post_url = CASE WHEN $3::text = 'published' THEN $5::text ELSE cv.post_url END,\n      status_note = CASE $3::text\n        WHEN 'published' THEN 'Published'\n        WHEN 'failed' THEN left('Publish failed (LinkedIn refused): ' || COALESCE($6::text, ''), 500)\n        ELSE 'Outcome unknown - do not retry until reconciled against LinkedIn'\n      END,\n      updated_at = now()\n  FROM chk\n  WHERE cv.content_id = chk.content_id\n    AND chk.outcome = 'ok'\n  RETURNING cv.status\n),\naud AS (\n  INSERT INTO audit_log (entity_type, entity_id, action, actor, old_status, new_status, details, workflow_name, execution_id)\n  SELECT 'content', COALESCE(chk.content_id, $1::text), CASE WHEN chk.outcome = 'ok' THEN 'publish_' || $3::text ELSE 'publish_result_refused' END, 'system',\n    chk.old_status, CASE WHEN chk.outcome = 'ok' THEN chk.attempt_status ELSE chk.old_status END,\n    jsonb_build_object('attempt_id', $1::text, 'outcome', chk.outcome, 'linkedin_urn', $4::text, 'error', $6::text),\n    $7, $2\n  FROM chk\n  RETURNING id\n)\nSELECT $1::text AS attempt_id,\n  chk.content_id,\n  chk.outcome,\n  chk.outcome IN ('ok', 'duplicate') AS success,\n  chk.outcome = 'duplicate' AS duplicate,\n  CASE WHEN chk.outcome = 'ok' THEN chk.attempt_status ELSE chk.old_status END AS attempt_status,\n  (SELECT status FROM uc) AS content_status,\n  ($3::text = 'unknown' AND chk.outcome = 'ok') AS reconciliation_required,\n  (SELECT id FROM aud) AS audit_id\nFROM chk",
+        "options": {
+          "queryReplacement": "={{ $json.attempt_id }}, {{ $json.execution_id }}, {{ $json.outcome }}, {{ $json.linkedin_urn }}, {{ $json.post_url }}, {{ $json.error_details }}, {{ $json.workflow_name }}",
+          "replaceEmptyStrings": true
+        }
+      },
+      "id": "5fd044cf-afe9-4774-9a47-ce9e300cc4d9",
+      "name": "Record Publish Result",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        992,
+        2064
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gateway Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Claim Topic Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Cost",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Topic Budget",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route State Change",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Topic Slot": {
+      "main": [
+        [
+          {
+            "node": "Lock Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Cost": {
+      "main": [
+        [
+          {
+            "node": "Budget Alert Needed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Budget Alert Needed?": {
+      "main": [
+        [
+          {
+            "node": "Send Budget Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cost Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Budget Alert": {
+      "main": [
+        [
+          {
+            "node": "Cost Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Topic Budget": {
+      "main": [
+        [
+          {
+            "node": "Budget Check Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route State Change": {
+      "main": [
+        [
+          {
+            "node": "Release Topic Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write Audit Entry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sync Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Approval Decision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create New Version",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Claim Publish Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Publish Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d865e92e-cafe-4060-a5f5-8de957d35e3f",
+  "meta": {
+    "instanceId": "4b9ab7222f68f7c22c472c177c357cad0d9bb60850d0276343313a2c5cf6978b"
+  },
+  "nodeGroups": [
+    {
+      "id": "5e0b254c-f5a2-4a14-b1c1-ad1c47f54879",
+      "name": "Check the request",
+      "nodeIds": [
+        "8beb19bf-a78f-4709-b0ec-4dea5d10fa5a",
+        "2faaa21b-6a14-434b-9cdb-68e43a597e62"
+      ],
+      "description": "Rejects unknown actions, missing owner IDs and attempts to write approval or publishing fields before anything touches the database"
+    },
+    {
+      "id": "fabaee6a-e83b-4aee-9143-2a7606dac483",
+      "name": "Claim topic slot",
+      "nodeIds": [
+        "0a375825-3a27-495c-9c07-c2a1f92fc202",
+        "b3318312-febc-481e-b700-65e68ec15d92"
+      ],
+      "description": "One claim per topic at a time: renews the caller's own lock, refuses locks held by others, or reports all 3 slots busy"
+    },
+    {
+      "id": "ad4f509b-a222-4f3c-a632-aa72e44fa873",
+      "name": "Track topic budget",
+      "nodeIds": [
+        "deb67883-8321-46df-9349-c6046b7147c8",
+        "b6a88aa4-b3e9-46c6-bbc1-33dc58415d45",
+        "eb12a7f0-5d45-489b-9819-9c3fe3b7def4",
+        "8725615a-7411-4a51-a695-acda4a415860"
+      ],
+      "description": "Records each charge once per idempotency key, then warns once at 80% and once at 100% of the topic budget"
+    },
+    {
+      "id": "fa1adc0f-65b0-4312-ae8b-ee0a745ae0fa",
+      "name": "Report budget status",
+      "nodeIds": [
+        "d308b0a3-4d20-43c8-b6e0-bf8738626d0b",
+        "b6300747-694c-4b05-b452-c4e4d160d58b"
+      ],
+      "description": "Lets a caller ask, before a paid AI call, whether the topic is still within budget, without recording a charge"
+    },
+    {
+      "id": "ffdfff08-17b6-4a10-b20e-813dfcb901b0",
+      "name": "Record state changes",
+      "nodeIds": [
+        "97d5f81e-af58-4d65-827b-7485e0abd1d4",
+        "f3996db0-89d8-465c-a492-54864a9e672b",
+        "bc9c038a-b870-405e-a810-2c743929e505",
+        "eef4a00c-344a-4a1d-b64f-3a2655115639",
+        "358bef5b-a287-4587-bbeb-64374ee97007",
+        "064c0d6b-867b-4917-8321-4d6f6d644328",
+        "13e73e16-9cef-459a-a48d-ef09c247ec3c",
+        "5fd044cf-afe9-4774-9a47-ce9e300cc4d9"
+      ],
+      "description": "Lock release, audit, draft sync, role-checked decisions on exact text, versioning that resets approvals, atomic publish claims"
+    }
+  ],
+  "id": "d5JwJuduCfF3UUAE",
+  "tags": []
+}

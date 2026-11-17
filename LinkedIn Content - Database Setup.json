@@ -1,0 +1,88 @@
+{
+  "name": "LinkedIn Content - Database Setup",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a0875361-d14a-4aaf-8618-666576f278a0",
+      "name": "Run Once",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS topics (\n  post_id text PRIMARY KEY,\n  topic text,\n  destination text,\n  language text,\n  content_pillar text,\n  priority text,\n  notes text,\n  status text,\n  sources_found integer,\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now()\n);\n\nCREATE TABLE IF NOT EXISTS content_versions (\n  content_id text PRIMARY KEY,\n  post_id text,\n  version integer,\n  parent_content_id text,\n  destination text,\n  language text,\n  variation_label text,\n  post_text text,\n  char_count integer,\n  status text,\n  risk_level text,\n  admin_approval_required boolean DEFAULT false,\n  reviewer_name text,\n  reviewer_decision text,\n  publisher_name text,\n  publisher_authorization text,\n  admin_name text,\n  admin_approval text,\n  approved_hash text,\n  approved_at timestamptz,\n  scheduled_for timestamptz,\n  published_at timestamptz,\n  linkedin_urn text,\n  post_url text,\n  status_note text,\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS idx_content_versions_post_id ON content_versions (post_id);\nCREATE INDEX IF NOT EXISTS idx_content_versions_status ON content_versions (status);\n\nCREATE TABLE IF NOT EXISTS audit_log (\n  id bigserial PRIMARY KEY,\n  entity_type text,\n  entity_id text,\n  action text,\n  actor text,\n  old_status text,\n  new_status text,\n  details jsonb DEFAULT '{}'::jsonb,\n  workflow_name text,\n  execution_id text,\n  created_at timestamptz DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log (entity_id);\n\nCREATE TABLE IF NOT EXISTS topic_slots (\n  slot_no integer PRIMARY KEY,\n  post_id text,\n  execution_id text,\n  locked_at timestamptz,\n  expires_at timestamptz\n);\nINSERT INTO topic_slots (slot_no) SELECT generate_series(1, 3) ON CONFLICT (slot_no) DO NOTHING;\n\nCREATE TABLE IF NOT EXISTS cost_ledger (\n  id bigserial PRIMARY KEY,\n  post_id text,\n  step text,\n  provider text,\n  model text,\n  input_tokens integer,\n  output_tokens integer,\n  cost_usd numeric(10,5) DEFAULT 0,\n  created_at timestamptz DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS idx_cost_ledger_post_id ON cost_ledger (post_id);\n\nCREATE TABLE IF NOT EXISTS topic_budget (\n  post_id text PRIMARY KEY,\n  budget_usd numeric(10,4) DEFAULT 0.50,\n  spent_usd numeric(10,5) DEFAULT 0,\n  warning_sent boolean DEFAULT false,\n  exceeded_sent boolean DEFAULT false,\n  alert_now text,\n  updated_at timestamptz DEFAULT now()\n);\n\nSELECT table_name FROM information_schema.tables\nWHERE table_schema = 'public'\n  AND table_name IN ('topics','content_versions','audit_log','topic_slots','cost_ledger','topic_budget')\nORDER BY table_name;",
+        "options": {
+          "queryBatching": "single"
+        }
+      },
+      "id": "30764d15-aece-430e-b3f0-4d6602f38d9c",
+      "name": "Create Tables",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Migration 002 (schema v2). Repeatable: safe to run again. Test on a database copy first.\nBEGIN;\n\nCREATE TABLE IF NOT EXISTS workflow_schema_versions (\n  version     text PRIMARY KEY,\n  description text NOT NULL,\n  applied_at  timestamptz NOT NULL DEFAULT now(),\n  applied_by  text DEFAULT current_user\n);\n\n-- ---------- topics ----------\nALTER TABLE topics\n  ADD COLUMN IF NOT EXISTS research_attempts integer NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS last_error text;\nCREATE INDEX IF NOT EXISTS idx_topics_status ON topics (status);\n\n-- ---------- topic_slots: one slot per topic (backstop for concurrent claims) ----------\nCREATE UNIQUE INDEX IF NOT EXISTS topic_slots_one_slot_per_post\n  ON topic_slots (post_id) WHERE post_id IS NOT NULL;\n\n-- ---------- cost_ledger ----------\nALTER TABLE cost_ledger\n  ADD COLUMN IF NOT EXISTS idempotency_key text,\n  ADD COLUMN IF NOT EXISTS execution_id    text,\n  ADD COLUMN IF NOT EXISTS content_id      text,\n  ADD COLUMN IF NOT EXISTS pricing_version text,\n  ADD COLUMN IF NOT EXISTS usage_type      text;\nUPDATE cost_ledger SET idempotency_key = 'legacy:' || id::text WHERE idempotency_key IS NULL;\nUPDATE cost_ledger SET usage_type = 'estimated' WHERE usage_type IS NULL;\nALTER TABLE cost_ledger ALTER COLUMN idempotency_key SET NOT NULL;\nDO $$ BEGIN\n  -- Full (not partial) unique constraint: the gateway uses ON CONFLICT (idempotency_key),\n  -- which a partial \"WHERE idempotency_key IS NOT NULL\" index would not satisfy.\n  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cost_ledger_idempotency_key_uq') THEN\n    ALTER TABLE cost_ledger ADD CONSTRAINT cost_ledger_idempotency_key_uq UNIQUE (idempotency_key);\n  END IF;\n  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cost_ledger_usage_type_chk') THEN\n    ALTER TABLE cost_ledger ADD CONSTRAINT cost_ledger_usage_type_chk CHECK (usage_type IN ('actual', 'estimated'));\n  END IF;\nEND $$;\nCREATE INDEX IF NOT EXISTS idx_cost_ledger_execution ON cost_ledger (execution_id);\n\n-- ---------- content_versions ----------\nALTER TABLE content_versions\n  ADD COLUMN IF NOT EXISTS risk_notes            text,\n  ADD COLUMN IF NOT EXISTS risk_flags            text,\n  ADD COLUMN IF NOT EXISTS risk_hash             text,\n  ADD COLUMN IF NOT EXISTS risk_checked_at       timestamptz,\n  ADD COLUMN IF NOT EXISTS risk_review_status    text,\n  ADD COLUMN IF NOT EXISTS approval_eligible     boolean NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS verification_required boolean NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS verified_by_user_id   text,\n  ADD COLUMN IF NOT EXISTS verified_at           timestamptz,\n  ADD COLUMN IF NOT EXISTS verification_notes    text,\n  ADD COLUMN IF NOT EXISTS verification_evidence jsonb,\n  ADD COLUMN IF NOT EXISTS verified_hash         text,\n  ADD COLUMN IF NOT EXISTS verification_outcome  text,\n  ADD COLUMN IF NOT EXISTS reviewer_user_id      text,\n  ADD COLUMN IF NOT EXISTS reviewer_notes        text,\n  ADD COLUMN IF NOT EXISTS reviewer_at           timestamptz,\n  ADD COLUMN IF NOT EXISTS publisher_user_id     text,\n  ADD COLUMN IF NOT EXISTS publisher_at          timestamptz,\n  ADD COLUMN IF NOT EXISTS admin_user_id         text,\n  ADD COLUMN IF NOT EXISTS admin_at              timestamptz,\n  ADD COLUMN IF NOT EXISTS approved_version      integer,\n  ADD COLUMN IF NOT EXISTS superseded_by         text;\n-- Human verification is sticky: once flagged, only record_verification clears it, for one exact hash.\nUPDATE content_versions SET verification_required = true\nWHERE NOT verification_required\n  AND (status = 'Needs Human Verification' OR risk_review_status = 'Needs Human Verification');\nDO $$ BEGIN\n  -- NOT VALID: enforced for new/updated rows, existing over-length rows (pre-check 3) are left for review.\n  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'content_versions_post_text_max_1250') THEN\n    ALTER TABLE content_versions ADD CONSTRAINT content_versions_post_text_max_1250\n      CHECK (post_text IS NULL OR char_length(post_text) <= 1250) NOT VALID;\n  END IF;\nEND $$;\n-- One revision per parent version: a second concurrent revision of the same version fails.\nCREATE UNIQUE INDEX IF NOT EXISTS uq_content_versions_one_child_per_parent\n  ON content_versions (parent_content_id) WHERE parent_content_id IS NOT NULL;\nCREATE INDEX IF NOT EXISTS idx_content_versions_destination_status ON content_versions (destination, status);\nCREATE INDEX IF NOT EXISTS idx_content_versions_scheduled_for ON content_versions (scheduled_for);\n\n-- ---------- audit_log ----------\nCREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log (created_at);\n\n-- ---------- user directory (authenticated identity, audit 4.5) ----------\nCREATE TABLE IF NOT EXISTS users (\n  user_id          text PRIMARY KEY,\n  display_name     text NOT NULL,\n  email            text UNIQUE,\n  email_verified   boolean NOT NULL DEFAULT false,\n  telegram_user_id text UNIQUE,\n  active           boolean NOT NULL DEFAULT true,\n  backup_user_id   text REFERENCES users (user_id),\n  created_at       timestamptz NOT NULL DEFAULT now(),\n  updated_at       timestamptz NOT NULL DEFAULT now()\n);\nCREATE TABLE IF NOT EXISTS user_role_assignments (\n  id               bigserial PRIMARY KEY,\n  user_id          text NOT NULL REFERENCES users (user_id),\n  role             text NOT NULL CHECK (role IN ('verifier', 'reviewer', 'publisher', 'admin')),\n  destination      text NOT NULL CHECK (destination IN ('Personal', 'Company', 'Both')),\n  can_self_approve boolean NOT NULL DEFAULT false,\n  active           boolean NOT NULL DEFAULT true,\n  granted_by       text,\n  granted_at       timestamptz NOT NULL DEFAULT now(),\n  UNIQUE (user_id, role, destination)\n);\n\n-- ---------- immutable approval events ----------\nCREATE TABLE IF NOT EXISTS approval_events (\n  id              bigserial PRIMARY KEY,\n  idempotency_key text NOT NULL UNIQUE,\n  content_id      text NOT NULL,\n  version         integer,\n  content_hash    text NOT NULL,\n  stage           text NOT NULL CHECK (stage IN ('verification', 'reviewer', 'publisher', 'admin')),\n  decision        text NOT NULL,\n  actor_user_id   text NOT NULL,\n  actor_channel   text,\n  notes           text,\n  evidence        jsonb NOT NULL DEFAULT '{}'::jsonb,\n  old_status      text,\n  new_status      text,\n  execution_id    text,\n  workflow_name   text,\n  created_at      timestamptz NOT NULL DEFAULT now()\n);\nCREATE INDEX IF NOT EXISTS idx_approval_events_content ON approval_events (content_id);\n\n-- ---------- research sources ----------\nCREATE TABLE IF NOT EXISTS content_sources (\n  id                bigserial PRIMARY KEY,\n  post_id           text NOT NULL,\n  content_id        text,\n  url               text NOT NULL,\n  title             text,\n  publisher         text,\n  published_at      timestamptz,\n  retrieved_at      timestamptz,\n  validation_status text,\n  rejection_reason  text,\n  created_at        timestamptz NOT NULL DEFAULT now(),\n  UNIQUE (post_id, url)\n);\n\n-- ---------- publishing attempts and global pause ----------\nCREATE TABLE IF NOT EXISTS publishing_attempts (\n  attempt_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  content_id    text NOT NULL,\n  version       integer,\n  destination   text NOT NULL,\n  execution_id  text NOT NULL,\n  request_hash  text NOT NULL,\n  slot_label    text,\n  status        text NOT NULL CHECK (status IN ('Publishing', 'Published', 'Failed', 'Unknown - Reconciliation Required', 'Confirmed Absent')),\n  linkedin_urn  text,\n  post_url      text,\n  error_details text,\n  claimed_at    timestamptz NOT NULL DEFAULT now(),\n  finished_at   timestamptz,\n  updated_at    timestamptz NOT NULL DEFAULT now()\n);\n-- One active-or-published attempt per content version; one in-flight publish per destination.\nCREATE UNIQUE INDEX IF NOT EXISTS uq_publishing_attempts_active_content\n  ON publishing_attempts (content_id) WHERE status IN ('Publishing', 'Unknown - Reconciliation Required', 'Published');\nCREATE UNIQUE INDEX IF NOT EXISTS uq_publishing_attempts_inflight_destination\n  ON publishing_attempts (destination) WHERE status = 'Publishing';\n\nCREATE TABLE IF NOT EXISTS publishing_controls (\n  id            integer PRIMARY KEY CHECK (id = 1),\n  paused        boolean NOT NULL DEFAULT true,\n  paused_reason text,\n  updated_by    text,\n  updated_at    timestamptz NOT NULL DEFAULT now()\n);\n-- Starts PAUSED: LinkedIn publishing stays off until an Admin un-pauses it deliberately.\nINSERT INTO publishing_controls (id, paused, paused_reason, updated_by)\nVALUES (1, true, 'Initial state: publishing disabled until Admin signoff', 'migration 002')\nON CONFLICT (id) DO NOTHING;\n\n-- ---------- append-only enforcement ----------\nCREATE OR REPLACE FUNCTION li_block_update_delete() RETURNS trigger LANGUAGE plpgsql AS $$\nBEGIN\n  RAISE EXCEPTION '% is append-only: % is not allowed', TG_TABLE_NAME, TG_OP;\nEND $$;\nDROP TRIGGER IF EXISTS approval_events_append_only ON approval_events;\nCREATE TRIGGER approval_events_append_only BEFORE UPDATE OR DELETE ON approval_events\n  FOR EACH ROW EXECUTE FUNCTION li_block_update_delete();\nDROP TRIGGER IF EXISTS audit_log_append_only ON audit_log;\nCREATE TRIGGER audit_log_append_only BEFORE UPDATE OR DELETE ON audit_log\n  FOR EACH ROW EXECUTE FUNCTION li_block_update_delete();\n\nINSERT INTO workflow_schema_versions (version, description)\nVALUES ('002', 'Schema v2: cost idempotency, risk/verification/approval columns, user directory, approval events, sources, publishing attempts, publishing pause')\nON CONFLICT (version) DO NOTHING;\n\nCOMMIT;\n\nSELECT (SELECT string_agg(version, ', ' ORDER BY version) FROM workflow_schema_versions) AS applied_schema_versions,\n  (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'content_versions'\n     AND column_name IN ('approval_eligible', 'verification_required', 'verified_hash', 'reviewer_user_id', 'publisher_user_id', 'admin_user_id', 'approved_version', 'superseded_by'))::int AS content_v2_columns_present_of_8,\n  (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'\n     AND table_name IN ('workflow_schema_versions', 'users', 'user_role_assignments', 'approval_events', 'content_sources', 'publishing_attempts', 'publishing_controls'))::int AS new_tables_present_of_7,\n  (SELECT paused FROM publishing_controls WHERE id = 1) AS publishing_paused;",
+        "options": {
+          "queryBatching": "single"
+        }
+      },
+      "id": "3333c207-82f4-4f3c-a176-a89150e5faaa",
+      "name": "Apply Schema Migration 002",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        448,
+        0
+      ],
+      "executeOnce": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Once": {
+      "main": [
+        [
+          {
+            "node": "Create Tables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Tables": {
+      "main": [
+        [
+          {
+            "node": "Apply Schema Migration 002",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "def66130-4727-4124-8809-87cf57499008",
+  "meta": {
+    "instanceId": "4b9ab7222f68f7c22c472c177c357cad0d9bb60850d0276343313a2c5cf6978b"
+  },
+  "nodeGroups": [],
+  "id": "9cwixkDJCtpJFv6O",
+  "tags": []
+}

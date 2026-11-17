@@ -1,0 +1,1644 @@
+{
+  "name": "LinkedIn Content - Scheduled Publisher",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1-5"
+            },
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "df2e0e73-9bf7-4b12-b727-6ed1666a35e4",
+      "name": "Publishing Slots (Mon-Fri)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        464,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "slot_destination",
+              "value": "={{ $now.setZone(\"Asia/Kolkata\").hour < 12 ? \"Personal\" : \"Company\" }}",
+              "type": "string"
+            },
+            {
+              "id": "p2",
+              "name": "publishing_paused",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "p3",
+              "name": "company_org_urn",
+              "value": "<__PLACEHOLDER_VALUE__Company page organization URN, e.g. urn:li:organization:123456__>",
+              "type": "string"
+            },
+            {
+              "id": "p4",
+              "name": "alert_chat",
+              "value": "<__PLACEHOLDER_VALUE__Publisher Telegram chat ID for publishing alerts__>",
+              "type": "string"
+            },
+            {
+              "id": "p5",
+              "name": "slot_label",
+              "value": "={{ $now.setZone(\"Asia/Kolkata\").hour < 12 ? \"7:00 AM IST personal profile\" : \"5:00 PM IST company page\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a7815927-f9d9-40b7-86fc-74624f24f2f1",
+      "name": "Publishing Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        688,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f1",
+              "leftValue": "={{ $json.publishing_paused }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "22571c5f-9b78-487e-a13d-f56809214b16",
+      "name": "Publishing Not Paused",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "d5JwJuduCfF3UUAE",
+          "cachedResultName": "LinkedIn Content - DB Gateway"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "post_id",
+              "displayName": "post_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "execution_id",
+              "displayName": "execution_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "ttl_minutes",
+              "displayName": "ttl_minutes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "entity",
+              "displayName": "entity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "record",
+              "displayName": "record",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "entity_type",
+              "displayName": "entity_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "entity_id",
+              "displayName": "entity_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "audit_action",
+              "displayName": "audit_action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "actor",
+              "displayName": "actor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "old_status",
+              "displayName": "old_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "new_status",
+              "displayName": "new_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "details",
+              "displayName": "details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "workflow_name",
+              "displayName": "workflow_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "step",
+              "displayName": "step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "provider",
+              "displayName": "provider",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "model",
+              "displayName": "model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "input_tokens",
+              "displayName": "input_tokens",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "output_tokens",
+              "displayName": "output_tokens",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "cost_usd",
+              "displayName": "cost_usd",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "budget_usd",
+              "displayName": "budget_usd",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "idempotency_key",
+              "displayName": "idempotency_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "content_id",
+              "displayName": "content_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "charge_no",
+              "displayName": "charge_no",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "pricing_version",
+              "displayName": "pricing_version",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "usage_type",
+              "displayName": "usage_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "actor_user_id",
+              "displayName": "actor_user_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "actor_channel",
+              "displayName": "actor_channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "decision",
+              "displayName": "decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "content_hash",
+              "displayName": "content_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "evidence",
+              "displayName": "evidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "new_record",
+              "displayName": "new_record",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "destination",
+              "displayName": "destination",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "slot_label",
+              "displayName": "slot_label",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "attempt_id",
+              "displayName": "attempt_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "linkedin_urn",
+              "displayName": "linkedin_urn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "post_url",
+              "displayName": "post_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "error_details",
+              "displayName": "error_details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "value": {
+            "action": "claim_publish",
+            "destination": "={{ $json.slot_destination }}",
+            "execution_id": "={{ $execution.id }}",
+            "slot_label": "={{ $json.slot_label }}",
+            "workflow_name": "LinkedIn Content - Scheduled Publisher"
+          }
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "a999a803-11b1-451e-9d14-311af75c3227",
+      "name": "Claim Publish Slot",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        1088,
+        32
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "h1",
+              "leftValue": "={{ $json.claimed === true && !!$json.attempt_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bbc05b3c-f1ed-42ac-bd49-d9bbf32a4537",
+      "name": "Post Claimed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1280,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "LinkedIn Content Ops (spreadsheet)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Content Variations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "Content_ID"
+          ],
+          "value": {
+            "Content_ID": "={{ $(\"Claim Publish Slot\").first().json.content_id }}",
+            "Review_Status": "Publishing",
+            "Status_Note": "={{ \"Claimed for the \" + $(\"Claim Publish Slot\").first().json.destination + \" slot (attempt \" + $(\"Claim Publish Slot\").first().json.attempt_id + \")\" }}",
+            "Last_Updated": "={{ $now.setZone(\"Asia/Kolkata\").toFormat(\"yyyy-MM-dd HH:mm\") }}"
+          },
+          "schema": [
+            {
+              "id": "Content_ID",
+              "displayName": "Content_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Review_Status",
+              "displayName": "Review_Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status_Note",
+              "displayName": "Status_Note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last_Updated",
+              "displayName": "Last_Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0167e829-df18-454e-83f9-a654454ec156",
+      "name": "Mark Row as Publishing",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1504,
+        16
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d1",
+              "leftValue": "={{ $(\"Claim Publish Slot\").first().json.destination }}",
+              "rightValue": "Personal",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "22bb495c-1760-4bd9-af6a-968d3997679d",
+      "name": "Personal Slot?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1680,
+        16
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "person": "<__PLACEHOLDER_VALUE__Select your LinkedIn profile__>",
+        "text": "={{ $(\"Claim Publish Slot\").first().json.post_text }}",
+        "additionalFields": {
+          "visibility": "PUBLIC"
+        }
+      },
+      "id": "38494779-9f0d-4a26-873e-50c9baa4f6c3",
+      "name": "Post to Personal Profile",
+      "type": "n8n-nodes-base.linkedIn",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// One outcome per LinkedIn call. Only an explicit LinkedIn refusal (4xx other than timeout) counts as failed;\n// anything ambiguous is 'unknown' so the database blocks a blind retry until someone reconciles it.\nconst claim = $('Claim Publish Slot').first().json;\nreturn $input.all().map((it, i) => {\n  const j = it.json || {};\n  let outcome = 'unknown', urn = '', url = '', err = '';\n  if (j.error) {\n    const e = j.error;\n    const msg = typeof e === 'string' ? e : String(e.message || e.description || JSON.stringify(e));\n    const code = Number((typeof e === 'object' && (e.httpCode || e.statusCode || e.status)) || j.httpCode || 0) || 0;\n    outcome = code >= 400 && code < 500 && code !== 408 ? 'failed' : 'unknown';\n    err = (code ? 'HTTP ' + code + ': ' : 'No HTTP status available: ') + msg;\n  } else if (j.urn) {\n    outcome = 'published';\n    urn = String(j.urn);\n    url = 'https://www.linkedin.com/feed/update/' + urn;\n  } else {\n    err = 'LinkedIn returned no post URN, so it is unclear whether the post went out.';\n  }\n  return { json: { outcome, linkedin_urn: urn, post_url: url, error_details: err.slice(0, 2000), attempt_id: claim.attempt_id, content_id: claim.content_id, destination: claim.destination }, pairedItem: { item: i } };\n});"
+      },
+      "id": "590f6036-9310-4029-a80d-35bff8fdeb6b",
+      "name": "Determine Publish Outcome",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2176,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "postAs": "organization",
+        "organization": "={{ $(\"Publishing Settings\").first().json.company_org_urn }}",
+        "text": "={{ $(\"Claim Publish Slot\").first().json.post_text }}",
+        "additionalFields": {}
+      },
+      "id": "15c5cafd-6b42-41e2-9b7e-760661da7007",
+      "name": "Post to Company Page",
+      "type": "n8n-nodes-base.linkedIn",
+      "typeVersion": 1,
+      "position": [
+        1936,
+        160
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $(\"Publishing Settings\").first().json.alert_chat }}",
+        "text": "=LinkedIn slot not filled: {{ $(\"Publishing Settings\").first().json.slot_label }} ({{ $now.setZone(\"Asia/Kolkata\").toFormat(\"yyyy-MM-dd\") }})\n\n{{ $json.error ? \"The database could not be reached: \" + ($json.error.message || $json.error) : ({ publishing_paused: \"Publishing is paused in the database (publishing_controls). An Admin must switch it off.\", destination_busy: \"An earlier attempt for this destination is still Publishing or awaiting reconciliation. Nothing new is posted until it is resolved.\", no_eligible_content: \"No fully approved, unchanged post for this destination is ready.\" })[$json.claim_state] || (\"Claim result: \" + $json.claim_state) }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b854c814-d8e8-452d-b506-b0303b53bfff",
+      "name": "Alert Empty Slot",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1472,
+        384
+      ],
+      "webhookId": "d15b04e3-da0b-4308-9c9b-e82e4f4b356f"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "d5JwJuduCfF3UUAE",
+          "cachedResultName": "LinkedIn Content - DB Gateway"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "post_id",
+              "displayName": "post_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "execution_id",
+              "displayName": "execution_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "ttl_minutes",
+              "displayName": "ttl_minutes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "entity",
+              "displayName": "entity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "record",
+              "displayName": "record",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "entity_type",
+              "displayName": "entity_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "entity_id",
+              "displayName": "entity_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "audit_action",
+              "displayName": "audit_action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "actor",
+              "displayName": "actor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "old_status",
+              "displayName": "old_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "new_status",
+              "displayName": "new_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "details",
+              "displayName": "details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "workflow_name",
+              "displayName": "workflow_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "step",
+              "displayName": "step",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "provider",
+              "displayName": "provider",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "model",
+              "displayName": "model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "input_tokens",
+              "displayName": "input_tokens",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "output_tokens",
+              "displayName": "output_tokens",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "cost_usd",
+              "displayName": "cost_usd",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "budget_usd",
+              "displayName": "budget_usd",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "idempotency_key",
+              "displayName": "idempotency_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "content_id",
+              "displayName": "content_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "charge_no",
+              "displayName": "charge_no",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "pricing_version",
+              "displayName": "pricing_version",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "usage_type",
+              "displayName": "usage_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "actor_user_id",
+              "displayName": "actor_user_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "actor_channel",
+              "displayName": "actor_channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "decision",
+              "displayName": "decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "content_hash",
+              "displayName": "content_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "evidence",
+              "displayName": "evidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "new_record",
+              "displayName": "new_record",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "destination",
+              "displayName": "destination",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "slot_label",
+              "displayName": "slot_label",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "attempt_id",
+              "displayName": "attempt_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "outcome",
+              "displayName": "outcome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "linkedin_urn",
+              "displayName": "linkedin_urn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "post_url",
+              "displayName": "post_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "error_details",
+              "displayName": "error_details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "value": {
+            "action": "record_publish_result",
+            "attempt_id": "={{ $json.attempt_id }}",
+            "execution_id": "={{ $execution.id }}",
+            "outcome": "={{ $json.outcome }}",
+            "linkedin_urn": "={{ $json.linkedin_urn }}",
+            "post_url": "={{ $json.post_url }}",
+            "error_details": "={{ $json.error_details }}",
+            "workflow_name": "LinkedIn Content - Scheduled Publisher"
+          }
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "955a7ff6-4459-4283-a0c5-e0b8da6a2ab6",
+      "name": "Record Publish Result",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        2400,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "p1",
+              "leftValue": "={{ $json.success === true && $json.attempt_status === \"Published\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "248cef6f-035f-426f-9057-fa9033345215",
+      "name": "Published?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2624,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "LinkedIn Content Ops (spreadsheet)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Content Variations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "Content_ID"
+          ],
+          "value": {
+            "Content_ID": "={{ $(\"Determine Publish Outcome\").first().json.content_id }}",
+            "Review_Status": "Published",
+            "Status_Note": "={{ \"Published in the \" + $(\"Publishing Settings\").first().json.slot_label + \" slot\" }}",
+            "Published_At": "={{ $now.setZone(\"Asia/Kolkata\").toFormat(\"yyyy-MM-dd HH:mm\") }}",
+            "LinkedIn_URN": "={{ $(\"Determine Publish Outcome\").first().json.linkedin_urn }}",
+            "Post_URL": "={{ $(\"Determine Publish Outcome\").first().json.post_url }}",
+            "Last_Updated": "={{ $now.setZone(\"Asia/Kolkata\").toFormat(\"yyyy-MM-dd HH:mm\") }}"
+          },
+          "schema": [
+            {
+              "id": "Content_ID",
+              "displayName": "Content_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Review_Status",
+              "displayName": "Review_Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status_Note",
+              "displayName": "Status_Note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Published_At",
+              "displayName": "Published_At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "LinkedIn_URN",
+              "displayName": "LinkedIn_URN",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Post_URL",
+              "displayName": "Post_URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last_Updated",
+              "displayName": "Last_Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c614422c-7f20-410a-b929-6fc73bb9881b",
+      "name": "Mark Published",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2784,
+        48
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $(\"Publishing Settings\").first().json.alert_chat }}",
+        "text": "=Published to LinkedIn ({{ $(\"Publishing Settings\").first().json.slot_label }})\n\nContent_ID: {{ $(\"Claim Publish Slot\").first().json.content_id }} (v{{ $(\"Claim Publish Slot\").first().json.version }})\nLink: {{ $(\"Determine Publish Outcome\").first().json.post_url }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "1dd65a76-0e03-4e0b-85c7-7eff187d5f68",
+      "name": "Notify Published",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2960,
+        48
+      ],
+      "webhookId": "76488e38-b185-4571-bf84-a4861c100ef2"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "LinkedIn Content Ops (spreadsheet)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Content Variations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "Content_ID"
+          ],
+          "value": {
+            "Content_ID": "={{ $(\"Determine Publish Outcome\").first().json.content_id }}",
+            "Review_Status": "={{ $json.content_status || \"Publishing\" }}",
+            "Status_Note": "={{ ($json.reconciliation_required ? \"Outcome UNKNOWN - do not retry until checked against LinkedIn. \" : $json.success ? \"LinkedIn refused the post. \" : \"Result not accepted by the database (\" + $json.outcome + \"). \") + String($(\"Determine Publish Outcome\").first().json.error_details || \"\").slice(0, 300) }}",
+            "Last_Updated": "={{ $now.setZone(\"Asia/Kolkata\").toFormat(\"yyyy-MM-dd HH:mm\") }}"
+          },
+          "schema": [
+            {
+              "id": "Content_ID",
+              "displayName": "Content_ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Review_Status",
+              "displayName": "Review_Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status_Note",
+              "displayName": "Status_Note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last_Updated",
+              "displayName": "Last_Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "63d28ee4-7a3a-4dc4-afbe-2ef46e609a26",
+      "name": "Mark Publish Failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2800,
+        224
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $(\"Publishing Settings\").first().json.alert_chat }}",
+        "text": "={{ $(\"Record Publish Result\").first().json.reconciliation_required ? \"LinkedIn outcome UNKNOWN - DO NOT RETRY\" : \"LinkedIn publishing FAILED\" }} ({{ $(\"Publishing Settings\").first().json.slot_label }})\n\nContent_ID: {{ $(\"Determine Publish Outcome\").first().json.content_id }}\nAttempt: {{ $(\"Determine Publish Outcome\").first().json.attempt_id }}\nDetails: {{ String($(\"Determine Publish Outcome\").first().json.error_details || \"\").slice(0, 400) }}\n\n{{ $(\"Record Publish Result\").first().json.reconciliation_required ? \"The post may already be live. Check the profile or page by hand. This destination stays blocked until an Admin resolves the attempt in the database.\" : $(\"Record Publish Result\").first().json.success ? \"The post did not go out. Re-queueing it needs an Admin action in the database (not yet available as a workflow action).\" : \"The database refused to record this result (\" + $(\"Record Publish Result\").first().json.outcome + \"). The attempt is still marked Publishing, so the destination is blocked.\" }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "28e9e78f-2aa9-4bfd-bf9e-0ad3ddf4a4cb",
+      "name": "Alert Publish Failed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2976,
+        224
+      ],
+      "webhookId": "ee54afce-9bda-4623-9b86-2c1a4d2edd50"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $(\"Publishing Settings\").first().json.alert_chat }}",
+        "text": "=CRITICAL: LinkedIn result could not be saved to the database\n\nContent_ID: {{ $(\"Determine Publish Outcome\").first().json.content_id }}\nAttempt: {{ $(\"Determine Publish Outcome\").first().json.attempt_id }}\nLinkedIn outcome: {{ $(\"Determine Publish Outcome\").first().json.outcome }} {{ $(\"Determine Publish Outcome\").first().json.linkedin_urn }}\n\nThe attempt stays \"Publishing\", so nothing else posts to this destination (no double posting). Record this outcome in the database by hand.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "84255af7-7055-4b19-9104-117d8fb016f1",
+      "name": "Alert Result Not Recorded",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2640,
+        384
+      ],
+      "webhookId": "0f656653-93a5-498d-8de3-71ef5788c827"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Publishing Slots (Mon-Fri)": {
+      "main": [
+        [
+          {
+            "node": "Publishing Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publishing Settings": {
+      "main": [
+        [
+          {
+            "node": "Publishing Not Paused",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publishing Not Paused": {
+      "main": [
+        [
+          {
+            "node": "Claim Publish Slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Publish Slot": {
+      "main": [
+        [
+          {
+            "node": "Post Claimed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Claimed?": {
+      "main": [
+        [
+          {
+            "node": "Mark Row as Publishing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert Empty Slot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Row as Publishing": {
+      "main": [
+        [
+          {
+            "node": "Personal Slot?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Personal Slot?": {
+      "main": [
+        [
+          {
+            "node": "Post to Personal Profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Post to Company Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Personal Profile": {
+      "main": [
+        [
+          {
+            "node": "Determine Publish Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Determine Publish Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Publish Outcome": {
+      "main": [
+        [
+          {
+            "node": "Record Publish Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Company Page": {
+      "main": [
+        [
+          {
+            "node": "Determine Publish Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Determine Publish Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Publish Result": {
+      "main": [
+        [
+          {
+            "node": "Published?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert Result Not Recorded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Published?": {
+      "main": [
+        [
+          {
+            "node": "Mark Published",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Publish Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Published": {
+      "main": [
+        [
+          {
+            "node": "Notify Published",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Publish Failed": {
+      "main": [
+        [
+          {
+            "node": "Alert Publish Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b21acb7a-8ba4-491d-94ed-5a1f6718e65d",
+  "meta": {
+    "instanceId": "4b9ab7222f68f7c22c472c177c357cad0d9bb60850d0276343313a2c5cf6978b"
+  },
+  "nodeGroups": [
+    {
+      "id": "6fae8487-1539-4683-8cfc-81ff454d6808",
+      "name": "Claim post for slot",
+      "nodeIds": [
+        "a7815927-f9d9-40b7-86fc-74624f24f2f1",
+        "22571c5f-9b78-487e-a13d-f56809214b16",
+        "a999a803-11b1-451e-9d14-311af75c3227",
+        "bbc05b3c-f1ed-42ac-bd49-d9bbf32a4537"
+      ],
+      "description": "At 7 AM (personal) or 5 PM (company) IST the database hands out one fully approved, unchanged post, or says why not"
+    },
+    {
+      "id": "5795b443-7976-4a7d-9985-be89ef0cb360",
+      "name": "Publish to LinkedIn",
+      "nodeIds": [
+        "0167e829-df18-454e-83f9-a654454ec156",
+        "22bb495c-1760-4bd9-af6a-968d3997679d",
+        "38494779-9f0d-4a26-873e-50c9baa4f6c3",
+        "15c5cafd-6b42-41e2-9b7e-760661da7007",
+        "590f6036-9310-4029-a80d-35bff8fdeb6b"
+      ],
+      "description": "Posts the exact approved text once; a clear LinkedIn refusal is failed, anything ambiguous is unknown"
+    },
+    {
+      "id": "ba1fa664-3d70-4d3a-8a55-dc6817b8bb15",
+      "name": "Record outcome and alert",
+      "nodeIds": [
+        "955a7ff6-4459-4283-a0c5-e0b8da6a2ab6",
+        "248cef6f-035f-426f-9057-fa9033345215",
+        "c614422c-7f20-410a-b929-6fc73bb9881b",
+        "1dd65a76-0e03-4e0b-85c7-7eff187d5f68",
+        "63d28ee4-7a3a-4dc4-afbe-2ef46e609a26",
+        "28e9e78f-2aa9-4bfd-bf9e-0ad3ddf4a4cb",
+        "84255af7-7055-4b19-9104-117d8fb016f1"
+      ],
+      "description": "Saves the outcome in the database first, mirrors it to the sheet, and blocks retries when the result is unknown"
+    }
+  ],
+  "id": "uLPClKMfdCsPvsyu",
+  "tags": []
+}

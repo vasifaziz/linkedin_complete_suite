@@ -1,0 +1,663 @@
+{
+  "name": "LinkedIn Content - Post Stats & Reports",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 21 * * *"
+            }
+          ]
+        }
+      },
+      "id": "024a4f78-9c38-4317-93ee-243cda44eff7",
+      "name": "Collect Stats Daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -384,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "company_org_urn",
+              "value": "<__PLACEHOLDER_VALUE__Company page organization URN, e.g. urn:li:organization:12345678__>",
+              "type": "string"
+            },
+            {
+              "id": "s2",
+              "name": "linkedin_api_version",
+              "value": "202610",
+              "type": "string"
+            },
+            {
+              "id": "s3",
+              "name": "lookback_days",
+              "value": 30,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "559d333d-5e07-4216-abc8-457d3daa3a08",
+      "name": "Stats Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -96,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "LinkedIn Content Ops (spreadsheet)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Content Variations"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Review_Status",
+              "lookupValue": "Published"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "778e19be-13b1-4a71-abe1-d95df91f40fd",
+      "name": "Read Published Posts",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        128,
+        -128
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const s = $('Stats Settings').first().json;\nconst lookback = Number(s.lookback_days) || 30;\nconst cutoff = DateTime.now().setZone('Asia/Kolkata').minus({ days: lookback });\nconst out = [];\nfor (const item of $input.all()) {\n  const r = item.json;\n  if (String(r.Review_Status || '') !== 'Published') continue;\n  if (String(r.Destination || '').toLowerCase() !== 'company') continue;\n  const urn = String(r.LinkedIn_URN || '').trim();\n  if (!urn.startsWith('urn:li:')) continue;\n  const published = DateTime.fromFormat(String(r.Published_At || ''), 'yyyy-MM-dd HH:mm', { zone: 'Asia/Kolkata' });\n  if (!published.isValid || published < cutoff) continue;\n  out.push({ json: Object.assign({}, r, {\n    org_urn: s.company_org_urn,\n    api_version: s.linkedin_api_version,\n    urn_param: urn.includes(':ugcPost:') ? 'ugcPosts' : 'shares'\n  }) });\n}\nreturn out;"
+      },
+      "id": "0cfbcaf2-2050-411b-a111-9fbbb168e4ba",
+      "name": "Pick Company Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ \"https://api.linkedin.com/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=\" + encodeURIComponent($json.org_urn) + \"&\" + $json.urn_param + \"=List(\" + encodeURIComponent($json.LinkedIn_URN) + \")\" }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "linkedInCommunityManagementOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "LinkedIn-Version",
+              "value": "={{ $json.api_version }}"
+            },
+            {
+              "name": "X-Restli-Protocol-Version",
+              "value": "2.0.0"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "id": "4c904c10-368f-475c-97d6-b8c64d51ca39",
+      "name": "Fetch Post Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        576,
+        -128
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const post = $('Pick Company Posts').item.json;\nconst now = DateTime.now().setZone('Asia/Kolkata').toFormat('yyyy-MM-dd HH:mm');\nconst el = Array.isArray($json.elements) ? $json.elements[0] : null;\nconst st = el && el.totalShareStatistics ? el.totalShareStatistics : null;\nif (!st) {\n  const err = $json.error ? ($json.error.message || JSON.stringify($json.error)) : 'No statistics returned';\n  return { json: {\n    row_number: post.row_number,\n    Impressions: post.Impressions, Unique_Impressions: post.Unique_Impressions, Reactions: post.Reactions,\n    Comments: post.Comments, Reposts: post.Reposts, Clicks: post.Clicks, Engagement_Rate: post.Engagement_Rate,\n    Stats_Updated_At: post.Stats_Updated_At || '',\n    Stats_Source: ('Error ' + now + ': ' + String(err)).slice(0, 300)\n  } };\n}\nconst imp = Number(st.impressionCount) || 0;\nconst reactions = Number(st.likeCount) || 0;\nconst comments = Number(st.commentCount) || 0;\nconst reposts = Number(st.shareCount) || 0;\nconst clicks = Number(st.clickCount) || 0;\nconst rate = imp > 0 ? ((reactions + comments + reposts + clicks) / imp * 100) : 0;\nreturn { json: {\n  row_number: post.row_number,\n  Impressions: imp,\n  Unique_Impressions: Number(st.uniqueImpressionsCount) || 0,\n  Reactions: reactions,\n  Comments: comments,\n  Reposts: reposts,\n  Clicks: clicks,\n  Engagement_Rate: rate.toFixed(2) + '%',\n  Stats_Updated_At: now,\n  Stats_Source: 'LinkedIn API'\n} };"
+      },
+      "id": "2cff918b-5ffb-42f1-b1a0-5f20a3b1090a",
+      "name": "Format Stats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "LinkedIn Content Ops (spreadsheet)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Content Variations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "row_number"
+          ],
+          "value": {
+            "row_number": "={{ $json.row_number }}",
+            "Impressions": "={{ $json.Impressions }}",
+            "Unique_Impressions": "={{ $json.Unique_Impressions }}",
+            "Reactions": "={{ $json.Reactions }}",
+            "Comments": "={{ $json.Comments }}",
+            "Reposts": "={{ $json.Reposts }}",
+            "Clicks": "={{ $json.Clicks }}",
+            "Engagement_Rate": "={{ $json.Engagement_Rate }}",
+            "Stats_Updated_At": "={{ $json.Stats_Updated_At }}",
+            "Stats_Source": "={{ $json.Stats_Source }}"
+          },
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true
+            },
+            {
+              "id": "Impressions",
+              "displayName": "Impressions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Unique_Impressions",
+              "displayName": "Unique_Impressions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reactions",
+              "displayName": "Reactions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Comments",
+              "displayName": "Comments",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reposts",
+              "displayName": "Reposts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Clicks",
+              "displayName": "Clicks",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Engagement_Rate",
+              "displayName": "Engagement_Rate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stats_Updated_At",
+              "displayName": "Stats_Updated_At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Stats_Source",
+              "displayName": "Stats_Source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "379c5370-111d-45b9-8131-f87dc8c40337",
+      "name": "Save Stats to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1024,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "13affe9a-3de3-43c9-a4bb-05cddab47f46",
+      "name": "Weekly Report (Mon 9 AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -368,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "w1",
+              "name": "report_type",
+              "value": "Weekly",
+              "type": "string"
+            },
+            {
+              "id": "w2",
+              "name": "period_start",
+              "value": "={{ $now.setZone(\"Asia/Kolkata\").startOf(\"week\").minus({ weeks: 1 }).toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "w3",
+              "name": "period_end",
+              "value": "={{ $now.setZone(\"Asia/Kolkata\").startOf(\"week\").toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "w4",
+              "name": "prev_start",
+              "value": "={{ $now.setZone(\"Asia/Kolkata\").startOf(\"week\").minus({ weeks: 2 }).toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "w5",
+              "name": "label",
+              "value": "={{ $now.setZone(\"Asia/Kolkata\").startOf(\"week\").minus({ weeks: 1 }).toFormat(\"d LLL\") + \" - \" + $now.setZone(\"Asia/Kolkata\").startOf(\"week\").minus({ days: 1 }).toFormat(\"d LLL yyyy\") }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c2a7dcaa-2236-49a1-a470-2c259af78a71",
+      "name": "Last Week",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -144,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "LinkedIn Content Ops (spreadsheet)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Content Variations"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Review_Status",
+              "lookupValue": "Published"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "28dd4885-11e8-48f1-8166-75920a9ffe4b",
+      "name": "Read Posts for Report",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        144,
+        96
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "let p = null;\ntry { p = $('Last Week').first().json; } catch (e) { p = null; }\nif (!p || !p.period_start) {\n  try { p = $('Last Month').first().json; } catch (e) { p = null; }\n}\nif (!p || !p.period_start) throw new Error('Report period missing');\nconst NL = String.fromCharCode(10);\nconst Z = 'Asia/Kolkata';\nconst start = DateTime.fromISO(p.period_start, { zone: Z });\nconst end = DateTime.fromISO(p.period_end, { zone: Z });\nconst prevStart = DateTime.fromISO(p.prev_start, { zone: Z });\nconst num = v => { const n = Number(String(v === undefined || v === null ? '' : v).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n; };\nconst rows = $input.all().map(i => i.json).filter(r => Object.keys(r).length > 0 && String(r.Review_Status || '') === 'Published');\nconst posts = [];\nfor (const r of rows) {\n  const at = DateTime.fromFormat(String(r.Published_At || ''), 'yyyy-MM-dd HH:mm', { zone: Z });\n  if (!at.isValid) continue;\n  const imp = num(r.Impressions);\n  const eng = num(r.Reactions) + num(r.Comments) + num(r.Reposts) + num(r.Clicks);\n  posts.push({ r, at, imp, eng, hasStats: imp > 0, er: imp > 0 ? eng / imp * 100 : 0, predicted: num(r.Avg_Predicted_Score) });\n}\nconst cur = posts.filter(x => x.at >= start && x.at < end);\nconst prev = posts.filter(x => x.at >= prevStart && x.at < start);\nconst sum = (arr, f) => arr.reduce((a, x) => a + f(x), 0);\nconst totals = arr => {\n  const withStats = arr.filter(x => x.hasStats);\n  const imp = sum(withStats, x => x.imp);\n  const eng = sum(withStats, x => x.eng);\n  return { count: arr.length, withStats: withStats.length, imp, eng, er: imp > 0 ? eng / imp * 100 : 0,\n    reactions: sum(withStats, x => num(x.r.Reactions)), comments: sum(withStats, x => num(x.r.Comments)),\n    reposts: sum(withStats, x => num(x.r.Reposts)), clicks: sum(withStats, x => num(x.r.Clicks)) };\n};\nconst pct = (a, b) => b > 0 ? ((a - b) / b * 100 >= 0 ? '+' : '') + ((a - b) / b * 100).toFixed(0) + '%' : 'n/a';\nconst T = totals(cur);\nconst P = totals(prev);\nlet weekdays = 0;\nfor (let d = start; d < end; d = d.plus({ days: 1 })) { if (d.weekday <= 5) weekdays++; }\nconst planned = weekdays * 2;\nconst lines = [];\nlines.push('LinkedIn ' + p.report_type + ' Performance Report');\nlines.push(p.label);\nlines.push('');\nif (cur.length === 0) {\n  lines.push('No posts were published in this period (planned slots: ' + planned + ').');\n} else {\n  const personal = cur.filter(x => String(x.r.Destination).toLowerCase() === 'personal');\n  const company = cur.filter(x => String(x.r.Destination).toLowerCase() === 'company');\n  lines.push('Published: ' + cur.length + ' of ' + planned + ' planned slots (Personal ' + personal.length + ', Company ' + company.length + ')');\n  lines.push('Posts with stats: ' + T.withStats + ' of ' + T.count);\n  lines.push('');\n  lines.push('Impressions: ' + T.imp.toLocaleString('en-IN') + ' (' + pct(T.imp, P.imp) + ' vs previous period)');\n  lines.push('Reactions ' + T.reactions + ' | Comments ' + T.comments + ' | Reposts ' + T.reposts + ' | Clicks ' + T.clicks);\n  lines.push('Engagement rate: ' + T.er.toFixed(2) + '% (previous ' + (P.withStats ? P.er.toFixed(2) + '%' : 'n/a') + ')');\n  for (const [name, arr] of [['Personal', personal], ['Company', company]]) {\n    const t = totals(arr);\n    if (arr.length) lines.push('  ' + name + ': ' + t.imp.toLocaleString('en-IN') + ' impressions, ' + t.er.toFixed(2) + '% engagement');\n  }\n  const ranked = cur.filter(x => x.hasStats).sort((a, b) => b.er - a.er);\n  if (ranked.length) {\n    lines.push('');\n    lines.push('Top posts by engagement:');\n    ranked.slice(0, 3).forEach((x, i) => lines.push((i + 1) + '. ' + String(x.r.Topic || x.r.Content_ID).slice(0, 60) + ' (' + x.r.Destination + ') - ' + x.er.toFixed(2) + '%, ' + x.imp + ' impressions'));\n    if (ranked.length > 3) {\n      const w = ranked[ranked.length - 1];\n      lines.push('Lowest: ' + String(w.r.Topic || w.r.Content_ID).slice(0, 60) + ' - ' + w.er.toFixed(2) + '%');\n    }\n    const group = key => {\n      const m = {};\n      for (const x of ranked) { const k = String(x.r[key] || 'Unspecified'); (m[k] = m[k] || []).push(x); }\n      return Object.keys(m).map(k => { const t = totals(m[k]); return k + ' ' + t.er.toFixed(1) + '% (' + m[k].length + ')'; }).join(', ');\n    };\n    lines.push('');\n    lines.push('By pillar: ' + group('Pillar'));\n    lines.push('By language: ' + group('Language'));\n    const hi = ranked.filter(x => x.predicted >= 80);\n    const lo = ranked.filter(x => x.predicted > 0 && x.predicted < 80);\n    if (hi.length && lo.length) {\n      lines.push('AI score check: posts scored 80+ got ' + totals(hi).er.toFixed(2) + '% vs ' + totals(lo).er.toFixed(2) + '% for the rest');\n    }\n  }\n  const missing = cur.filter(x => !x.hasStats);\n  if (missing.length) {\n    lines.push('');\n    lines.push('Missing stats (' + missing.length + '): ' + missing.map(x => x.r.Content_ID).join(', '));\n    lines.push('Personal profile stats are not available through the API - copy impressions, reactions, comments and reposts from LinkedIn into the sheet.');\n  }\n}\nreturn [{ json: { report: lines.join(NL), report_type: p.report_type, posts_in_period: cur.length } }];"
+      },
+      "id": "4bc46905-938a-427e-a573-863ae8898ac7",
+      "name": "Build Performance Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "<__PLACEHOLDER_VALUE__Admin Telegram chat ID for performance reports__>",
+        "text": "={{ $json.report }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "2a91ee4a-9541-491d-a632-0e3502c58c67",
+      "name": "Send Performance Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        592,
+        96
+      ],
+      "webhookId": "eab78dcd-cec3-4ec0-b51a-9b1858713d58"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 1 * *"
+            }
+          ]
+        }
+      },
+      "id": "1cc10166-85aa-4345-8ebd-50c5f7058ebc",
+      "name": "Monthly Report (1st, 9 AM)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -368,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m1",
+              "name": "report_type",
+              "value": "Monthly",
+              "type": "string"
+            },
+            {
+              "id": "m2",
+              "name": "period_start",
+              "value": "={{ $now.setZone(\"Asia/Kolkata\").startOf(\"month\").minus({ months: 1 }).toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "m3",
+              "name": "period_end",
+              "value": "={{ $now.setZone(\"Asia/Kolkata\").startOf(\"month\").toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "m4",
+              "name": "prev_start",
+              "value": "={{ $now.setZone(\"Asia/Kolkata\").startOf(\"month\").minus({ months: 2 }).toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "m5",
+              "name": "label",
+              "value": "={{ $now.setZone(\"Asia/Kolkata\").startOf(\"month\").minus({ months: 1 }).toFormat(\"LLLL yyyy\") }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "98e29ce7-7615-4e08-b498-d92624866788",
+      "name": "Last Month",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -144,
+        160
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Collect Stats Daily": {
+      "main": [
+        [
+          {
+            "node": "Stats Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stats Settings": {
+      "main": [
+        [
+          {
+            "node": "Read Published Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Published Posts": {
+      "main": [
+        [
+          {
+            "node": "Pick Company Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Company Posts": {
+      "main": [
+        [
+          {
+            "node": "Fetch Post Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Post Stats": {
+      "main": [
+        [
+          {
+            "node": "Format Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Stats": {
+      "main": [
+        [
+          {
+            "node": "Save Stats to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Report (Mon 9 AM)": {
+      "main": [
+        [
+          {
+            "node": "Last Week",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Last Week": {
+      "main": [
+        [
+          {
+            "node": "Read Posts for Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Posts for Report": {
+      "main": [
+        [
+          {
+            "node": "Build Performance Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Performance Report": {
+      "main": [
+        [
+          {
+            "node": "Send Performance Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monthly Report (1st, 9 AM)": {
+      "main": [
+        [
+          {
+            "node": "Last Month",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Last Month": {
+      "main": [
+        [
+          {
+            "node": "Read Posts for Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "62899f10-514c-47d3-a4f4-e0895cb9c9d5",
+  "meta": {
+    "instanceId": "4b9ab7222f68f7c22c472c177c357cad0d9bb60850d0276343313a2c5cf6978b"
+  },
+  "nodeGroups": [
+    {
+      "id": "73c814db-78e1-41fe-94b4-65cdef2443dd",
+      "name": "Refresh company post stats",
+      "nodeIds": [
+        "559d333d-5e07-4216-abc8-457d3daa3a08",
+        "778e19be-13b1-4a71-abe1-d95df91f40fd",
+        "0cfbcaf2-2050-411b-a111-9fbbb168e4ba",
+        "4c904c10-368f-475c-97d6-b8c64d51ca39",
+        "2cff918b-5ffb-42f1-b1a0-5f20a3b1090a",
+        "379c5370-111d-45b9-8131-f87dc8c40337"
+      ],
+      "description": "Nightly, pulls impressions, reactions, comments, reposts and clicks for company posts from the last 30 days into the sheet"
+    },
+    {
+      "id": "d2535a31-49e1-4a0b-96b1-993c14e00a1d",
+      "name": "Send performance report",
+      "nodeIds": [
+        "28dd4885-11e8-48f1-8166-75920a9ffe4b",
+        "4bc46905-938a-427e-a573-863ae8898ac7",
+        "2a91ee4a-9541-491d-a632-0e3502c58c67"
+      ],
+      "description": "Compares the period with the one before: reach, engagement, top posts, pillars, languages and how AI scores held up"
+    }
+  ],
+  "id": "xjhqSBk2172MSV4h",
+  "tags": []
+}

@@ -1,0 +1,378 @@
+{
+  "name": "LinkedIn Content - Daily Maintenance",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 20 * * *"
+            }
+          ]
+        }
+      },
+      "id": "92da9b6b-04b0-46b1-8dff-6bcc3a511e94",
+      "name": "Every Day 8:30 PM IST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m1",
+              "name": "stale_review_hours",
+              "value": 24,
+              "type": "number"
+            },
+            {
+              "id": "m2",
+              "name": "stuck_publishing_minutes",
+              "value": 60,
+              "type": "number"
+            },
+            {
+              "id": "m3",
+              "name": "stuck_topic_hours",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "m4",
+              "name": "report_chat",
+              "value": "<__PLACEHOLDER_VALUE__Admin Telegram chat ID for the daily report__>",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "004594dd-d49f-490e-92ba-2473461a5be7",
+      "name": "Maintenance Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        272,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "LinkedIn Content Ops (spreadsheet)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Content Variations"
+        },
+        "options": {}
+      },
+      "id": "dcbe8d2f-9356-429c-a6e8-6910d58e3eb6",
+      "name": "Read Content Variations",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        496,
+        128
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "LinkedIn Content Ops (spreadsheet)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Topic Queue"
+        },
+        "options": {}
+      },
+      "id": "71d4189d-527c-4661-bbb7-8495b410014c",
+      "name": "Read Topic Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        720,
+        128
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH freed AS (\n  UPDATE topic_slots SET post_id = NULL, execution_id = NULL, locked_at = NULL, expires_at = NULL\n  WHERE post_id IS NOT NULL AND expires_at < now()\n  RETURNING slot_no, post_id\n),\nfreed_audit AS (\n  INSERT INTO audit_log (entity_type, entity_id, action, actor, details, workflow_name, execution_id)\n  SELECT 'topic', f.post_id, 'slot_expired_released', 'system', jsonb_build_object('slot_no', f.slot_no), 'LinkedIn Content - Daily Maintenance', $1\n  FROM freed f\n  RETURNING id\n),\nday_start AS (\n  SELECT (date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata') AS d,\n         (date_trunc('week', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata') AS w\n)\nSELECT\n  (SELECT count(*) FROM freed)::int AS slots_freed,\n  (SELECT COALESCE(string_agg(post_id, ', '), '') FROM freed) AS freed_topics,\n  (SELECT count(*) FROM topic_slots WHERE post_id IS NOT NULL AND expires_at >= now())::int AS slots_busy,\n  (SELECT COALESCE(sum(cost_usd), 0) FROM cost_ledger, day_start WHERE created_at >= day_start.d)::float AS spend_today_usd,\n  (SELECT count(DISTINCT post_id) FROM cost_ledger, day_start WHERE created_at >= day_start.d)::int AS topics_charged_today,\n  (SELECT COALESCE(sum(cost_usd), 0) FROM cost_ledger, day_start WHERE created_at >= day_start.w)::float AS spend_week_usd,\n  (SELECT COALESCE(json_agg(json_build_object('post_id', post_id, 'spent_usd', spent_usd::float, 'budget_usd', budget_usd::float) ORDER BY spent_usd DESC), '[]'::json)\n     FROM topic_budget WHERE spent_usd >= budget_usd AND updated_at >= now() - interval '7 days') AS over_budget,\n  (SELECT COALESCE(json_agg(json_build_object('post_id', post_id, 'spent_usd', spent_usd::float, 'budget_usd', budget_usd::float) ORDER BY spent_usd DESC), '[]'::json)\n     FROM topic_budget WHERE spent_usd >= 0.8 * budget_usd AND spent_usd < budget_usd AND updated_at >= now() - interval '7 days') AS near_budget",
+        "options": {
+          "queryReplacement": "={{ $execution.id }}"
+        }
+      },
+      "id": "37e67bf2-563a-41df-ac4c-166172fd23cc",
+      "name": "Database Housekeeping",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.8,
+      "position": [
+        944,
+        128
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Maintenance Settings').first().json;\nconst zone = 'Asia/Kolkata';\nconst now = DateTime.now().setZone(zone);\nconst today = now.toFormat('yyyy-MM-dd');\nconst NL = String.fromCharCode(10);\n\nfunction parseTime(v) {\n  const s = String(v || '').trim();\n  if (!s) return null;\n  let d = DateTime.fromISO(s, { zone });\n  if (!d.isValid) d = DateTime.fromFormat(s, 'yyyy-MM-dd HH:mm', { zone });\n  return d.isValid ? d : null;\n}\nconst isRow = j => j && Object.keys(j).length > 0;\nconst variations = $('Read Content Variations').all().map(i => i.json).filter(j => isRow(j) && j.Content_ID);\nconst topics = $('Read Topic Queue').all().map(i => i.json).filter(j => isRow(j) && (j.Topic || j.Post_ID));\nconst destOf = r => String(r.Destination || '').toLowerCase().startsWith('comp') ? 'Company' : 'Personal';\n\nconst byStatus = {};\nfor (const r of variations) {\n  const s = String(r.Review_Status || '(blank)');\n  byStatus[s] = (byStatus[s] || 0) + 1;\n}\n\nconst fixes = [];\nconst stuck = variations.filter(r => {\n  if (String(r.Review_Status) !== 'Publishing') return false;\n  const t = parseTime(r.Published_At) || parseTime(r.Last_Updated);\n  return !t || now.diff(t, 'minutes').minutes > Number(cfg.stuck_publishing_minutes || 60);\n});\nfor (const r of stuck) {\n  fixes.push({\n    row_number: r.row_number,\n    Review_Status: 'Publish Failed',\n    Status_Note: 'Stuck in Publishing since ' + (r.Published_At || 'unknown') + '. Check LinkedIn first - if it is not live, set status back to Approved - Ready to Schedule.',\n    Last_Updated: now.toFormat('yyyy-MM-dd HH:mm')\n  });\n}\n\nconst waiting = ['Pending Review', 'Awaiting Publisher', 'Awaiting Admin'];\nconst stale = variations.filter(r => {\n  if (!waiting.includes(String(r.Review_Status))) return false;\n  const t = parseTime(r.Last_Updated) || parseTime(r.Generated_At);\n  return t && now.diff(t, 'hours').hours > Number(cfg.stale_review_hours || 24);\n});\nconst blocked = variations.filter(r => /^blocked|^publish failed|^revision requested - notes missing/i.test(String(r.Review_Status || '')));\n\nconst approved = { Personal: 0, Company: 0 };\nfor (const r of variations) if (String(r.Review_Status) === 'Approved - Ready to Schedule') approved[destOf(r)]++;\nlet upcoming = 0;\nfor (let d = 1; d <= 7 && upcoming < 5; d++) {\n  const day = now.plus({ days: d });\n  if (day.weekday <= 5) upcoming++;\n}\nconst publishedToday = variations.filter(r => String(r.Review_Status) === 'Published' && String(r.Published_At || '').slice(0, 10) === today);\nconst weekStart = now.startOf('week');\nconst publishedWeek = variations.filter(r => {\n  if (String(r.Review_Status) !== 'Published') return false;\n  const t = parseTime(r.Published_At);\n  return t && t >= weekStart;\n});\n\nconst topicStatus = {};\nfor (const t of topics) {\n  const s = String(t.Status || '(new / unprocessed)');\n  topicStatus[s] = (topicStatus[s] || 0) + 1;\n}\nconst stuckTopics = topics.filter(t => {\n  if (t.Status && t.Status !== 'Processing') return false;\n  if (!t.Post_ID) return false;\n  const p = parseTime(t.Processed_At);\n  return !p || now.diff(p, 'hours').hours > Number(cfg.stuck_topic_hours || 2);\n});\n\nconst lines = [];\nlines.push('LinkedIn content - daily health report (' + now.toFormat('ccc d LLL yyyy, HH:mm') + ' IST)');\nlines.push('');\nlines.push('Published today: ' + publishedToday.length + ' | This week: ' + publishedWeek.length);\nlines.push('Approved and waiting - Personal: ' + approved.Personal + ', Company: ' + approved.Company + ' (next ' + upcoming + ' weekday slots each)');\nif (approved.Personal < upcoming) lines.push('  Personal pipeline short by ' + (upcoming - approved.Personal) + ' post(s)');\nif (approved.Company < upcoming) lines.push('  Company pipeline short by ' + (upcoming - approved.Company) + ' post(s)');\nlines.push('');\nlines.push('Drafts by status: ' + (Object.keys(byStatus).map(k => k + ' ' + byStatus[k]).join(', ') || 'none'));\nlines.push('Topics by status: ' + (Object.keys(topicStatus).map(k => k + ' ' + topicStatus[k]).join(', ') || 'none'));\nif (stale.length) lines.push('Waiting on approval > ' + cfg.stale_review_hours + 'h (' + stale.length + '): ' + stale.slice(0, 10).map(r => r.Content_ID + ' [' + r.Review_Status + ']').join(', '));\nif (blocked.length) lines.push('Blocked or failed (' + blocked.length + '): ' + blocked.slice(0, 10).map(r => r.Content_ID + ' [' + r.Review_Status + ']').join(', '));\nif (stuckTopics.length) lines.push('Topics that look stuck (' + stuckTopics.length + '): ' + stuckTopics.slice(0, 10).map(t => t.Topic).join(', '));\nif (fixes.length) lines.push('Auto-fixed: ' + fixes.length + ' row(s) stuck in Publishing were marked Publish Failed - check LinkedIn before retrying.');\n\nlet db = {};\ntry { db = $('Database Housekeeping').first().json || {}; } catch (e) { db = {}; }\nconst dbOk = db && db.spend_today_usd !== undefined && !db.error;\nconst asList = v => Array.isArray(v) ? v : (typeof v === 'string' && v.trim().startsWith('[') ? JSON.parse(v) : []);\nconst money = v => '$' + Number(v || 0).toFixed(4);\nconst overBudget = dbOk ? asList(db.over_budget) : [];\nconst nearBudget = dbOk ? asList(db.near_budget) : [];\nlines.push('');\nif (dbOk) {\n  lines.push('AI and research spend - today: ' + money(db.spend_today_usd) + ' across ' + (db.topics_charged_today || 0) + ' topic(s) | this week: ' + money(db.spend_week_usd));\n  lines.push('Topic slots in use: ' + (db.slots_busy || 0) + ' of 3');\n  if (Number(db.slots_freed || 0) > 0) lines.push('Auto-fixed: freed ' + db.slots_freed + ' expired topic slot(s): ' + db.freed_topics);\n  if (overBudget.length) lines.push('Over the per-topic budget (' + overBudget.length + '): ' + overBudget.slice(0, 10).map(b => b.post_id + ' ' + money(b.spent_usd) + '/' + money(b.budget_usd)).join(', '));\n  if (nearBudget.length) lines.push('Above 80% of budget (' + nearBudget.length + '): ' + nearBudget.slice(0, 10).map(b => b.post_id + ' ' + money(b.spent_usd)).join(', '));\n} else {\n  lines.push('Database check failed - spend, budgets and topic slots were not checked tonight' + (db.error ? ' (' + String(db.error.message || db.error).slice(0, 150) + ')' : '') + '.');\n}\nconst slotFixes = dbOk ? Number(db.slots_freed || 0) : 0;\nif (!stale.length && !blocked.length && !stuckTopics.length && !fixes.length && !slotFixes && !overBudget.length && dbOk) lines.push('No issues found.');\n\nreturn [{ json: { report: lines.join(NL), report_chat: String(cfg.report_chat || ''), fixes, fix_count: fixes.length } }];"
+      },
+      "id": "7f5088af-951a-4e59-aea9-d48305f8e311",
+      "name": "Build Health Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.report_chat }}",
+        "text": "={{ $json.report }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "2abbd305-cb4c-490f-99fc-e423dc67dad7",
+      "name": "Send Daily Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1024,
+        128
+      ],
+      "webhookId": "a4da1e95-df51-41d0-b078-a9cfd664aee4"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "fixes",
+        "options": {}
+      },
+      "id": "ca9c1424-006a-46d0-98a5-ed6d02c70516",
+      "name": "Split Stuck Rows",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "",
+          "cachedResultName": "LinkedIn Content Ops (spreadsheet)"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Content Variations"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "row_number"
+          ],
+          "value": {
+            "row_number": "={{ $json.row_number }}",
+            "Review_Status": "={{ $json.Review_Status }}",
+            "Status_Note": "={{ $json.Status_Note }}",
+            "Last_Updated": "={{ $json.Last_Updated }}"
+          },
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true
+            },
+            {
+              "id": "Review_Status",
+              "displayName": "Review_Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status_Note",
+              "displayName": "Status_Note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last_Updated",
+              "displayName": "Last_Updated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e4ccdf5f-7357-42cb-b629-eeb23982ce35",
+      "name": "Release Stuck Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1248,
+        320
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every Day 8:30 PM IST": {
+      "main": [
+        [
+          {
+            "node": "Maintenance Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Maintenance Settings": {
+      "main": [
+        [
+          {
+            "node": "Read Content Variations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Content Variations": {
+      "main": [
+        [
+          {
+            "node": "Read Topic Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Topic Queue": {
+      "main": [
+        [
+          {
+            "node": "Database Housekeeping",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Database Housekeeping": {
+      "main": [
+        [
+          {
+            "node": "Build Health Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Health Report": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Stuck Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Stuck Rows": {
+      "main": [
+        [
+          {
+            "node": "Release Stuck Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d4c97c1e-a54f-49da-b3bf-4c8ba865c188",
+  "meta": {
+    "instanceId": "4b9ab7222f68f7c22c472c177c357cad0d9bb60850d0276343313a2c5cf6978b"
+  },
+  "nodeGroups": [
+    {
+      "id": "6ffcbb83-5a66-4dba-bccf-1cbe9cbc510b",
+      "name": "Gather pipeline data",
+      "nodeIds": [
+        "004594dd-d49f-490e-92ba-2473461a5be7",
+        "dcbe8d2f-9356-429c-a6e8-6910d58e3eb6",
+        "71d4189d-527c-4661-bbb7-8495b410014c",
+        "37e67bf2-563a-41df-ac4c-166172fd23cc"
+      ],
+      "description": "Every evening reads drafts and topics, frees expired topic slots, and pulls daily spend and budget overruns"
+    },
+    {
+      "id": "e98c1bd9-63a6-4f13-9ba6-850904f0c0dc",
+      "name": "Report and self-heal",
+      "nodeIds": [
+        "7f5088af-951a-4e59-aea9-d48305f8e311",
+        "2abbd305-cb4c-490f-99fc-e423dc67dad7",
+        "ca9c1424-006a-46d0-98a5-ed6d02c70516",
+        "e4ccdf5f-7357-42cb-b629-eeb23982ce35"
+      ],
+      "description": "Sends the admin a pipeline health summary and frees posts stuck mid-publish so they can be retried safely"
+    }
+  ],
+  "id": "AZzOKYiZ4U368eDn",
+  "tags": []
+}
