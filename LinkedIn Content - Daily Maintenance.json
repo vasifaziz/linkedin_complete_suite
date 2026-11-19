@@ -12,7 +12,7 @@
           ]
         }
       },
-      "id": "92da9b6b-04b0-46b1-8dff-6bcc3a511e94",
+      "id": "45b4daf9-3030-4c4b-9423-9d40cf1802c9",
       "name": "Every Day 8:30 PM IST",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.4,
@@ -53,7 +53,7 @@
         },
         "options": {}
       },
-      "id": "004594dd-d49f-490e-92ba-2473461a5be7",
+      "id": "c62330f2-8207-4a53-900f-cbf514033d34",
       "name": "Maintenance Settings",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -77,7 +77,7 @@
         },
         "options": {}
       },
-      "id": "dcbe8d2f-9356-429c-a6e8-6910d58e3eb6",
+      "id": "84605b97-369e-4b74-8161-0d397d9ae7f6",
       "name": "Read Content Variations",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
@@ -85,7 +85,13 @@
         496,
         128
       ],
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0MQ93O7Xm3C9pi3n",
+          "name": "Google Sheets account 5"
+        }
+      }
     },
     {
       "parameters": {
@@ -102,7 +108,7 @@
         },
         "options": {}
       },
-      "id": "71d4189d-527c-4661-bbb7-8495b410014c",
+      "id": "68e91ba6-4e2b-44e2-9c94-1a3b148ce6cb",
       "name": "Read Topic Queue",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
@@ -111,7 +117,13 @@
         128
       ],
       "executeOnce": true,
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0MQ93O7Xm3C9pi3n",
+          "name": "Google Sheets account 5"
+        }
+      }
     },
     {
       "parameters": {
@@ -121,7 +133,7 @@
           "queryReplacement": "={{ $execution.id }}"
         }
       },
-      "id": "37e67bf2-563a-41df-ac4c-166172fd23cc",
+      "id": "1bac7da6-4f9c-46f3-8771-1f90f400d645",
       "name": "Database Housekeeping",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.8,
@@ -137,7 +149,7 @@
       "parameters": {
         "jsCode": "const cfg = $('Maintenance Settings').first().json;\nconst zone = 'Asia/Kolkata';\nconst now = DateTime.now().setZone(zone);\nconst today = now.toFormat('yyyy-MM-dd');\nconst NL = String.fromCharCode(10);\n\nfunction parseTime(v) {\n  const s = String(v || '').trim();\n  if (!s) return null;\n  let d = DateTime.fromISO(s, { zone });\n  if (!d.isValid) d = DateTime.fromFormat(s, 'yyyy-MM-dd HH:mm', { zone });\n  return d.isValid ? d : null;\n}\nconst isRow = j => j && Object.keys(j).length > 0;\nconst variations = $('Read Content Variations').all().map(i => i.json).filter(j => isRow(j) && j.Content_ID);\nconst topics = $('Read Topic Queue').all().map(i => i.json).filter(j => isRow(j) && (j.Topic || j.Post_ID));\nconst destOf = r => String(r.Destination || '').toLowerCase().startsWith('comp') ? 'Company' : 'Personal';\n\nconst byStatus = {};\nfor (const r of variations) {\n  const s = String(r.Review_Status || '(blank)');\n  byStatus[s] = (byStatus[s] || 0) + 1;\n}\n\nconst fixes = [];\nconst stuck = variations.filter(r => {\n  if (String(r.Review_Status) !== 'Publishing') return false;\n  const t = parseTime(r.Published_At) || parseTime(r.Last_Updated);\n  return !t || now.diff(t, 'minutes').minutes > Number(cfg.stuck_publishing_minutes || 60);\n});\nfor (const r of stuck) {\n  fixes.push({\n    row_number: r.row_number,\n    Review_Status: 'Publish Failed',\n    Status_Note: 'Stuck in Publishing since ' + (r.Published_At || 'unknown') + '. Check LinkedIn first - if it is not live, set status back to Approved - Ready to Schedule.',\n    Last_Updated: now.toFormat('yyyy-MM-dd HH:mm')\n  });\n}\n\nconst waiting = ['Pending Review', 'Awaiting Publisher', 'Awaiting Admin'];\nconst stale = variations.filter(r => {\n  if (!waiting.includes(String(r.Review_Status))) return false;\n  const t = parseTime(r.Last_Updated) || parseTime(r.Generated_At);\n  return t && now.diff(t, 'hours').hours > Number(cfg.stale_review_hours || 24);\n});\nconst blocked = variations.filter(r => /^blocked|^publish failed|^revision requested - notes missing/i.test(String(r.Review_Status || '')));\n\nconst approved = { Personal: 0, Company: 0 };\nfor (const r of variations) if (String(r.Review_Status) === 'Approved - Ready to Schedule') approved[destOf(r)]++;\nlet upcoming = 0;\nfor (let d = 1; d <= 7 && upcoming < 5; d++) {\n  const day = now.plus({ days: d });\n  if (day.weekday <= 5) upcoming++;\n}\nconst publishedToday = variations.filter(r => String(r.Review_Status) === 'Published' && String(r.Published_At || '').slice(0, 10) === today);\nconst weekStart = now.startOf('week');\nconst publishedWeek = variations.filter(r => {\n  if (String(r.Review_Status) !== 'Published') return false;\n  const t = parseTime(r.Published_At);\n  return t && t >= weekStart;\n});\n\nconst topicStatus = {};\nfor (const t of topics) {\n  const s = String(t.Status || '(new / unprocessed)');\n  topicStatus[s] = (topicStatus[s] || 0) + 1;\n}\nconst stuckTopics = topics.filter(t => {\n  if (t.Status && t.Status !== 'Processing') return false;\n  if (!t.Post_ID) return false;\n  const p = parseTime(t.Processed_At);\n  return !p || now.diff(p, 'hours').hours > Number(cfg.stuck_topic_hours || 2);\n});\n\nconst lines = [];\nlines.push('LinkedIn content - daily health report (' + now.toFormat('ccc d LLL yyyy, HH:mm') + ' IST)');\nlines.push('');\nlines.push('Published today: ' + publishedToday.length + ' | This week: ' + publishedWeek.length);\nlines.push('Approved and waiting - Personal: ' + approved.Personal + ', Company: ' + approved.Company + ' (next ' + upcoming + ' weekday slots each)');\nif (approved.Personal < upcoming) lines.push('  Personal pipeline short by ' + (upcoming - approved.Personal) + ' post(s)');\nif (approved.Company < upcoming) lines.push('  Company pipeline short by ' + (upcoming - approved.Company) + ' post(s)');\nlines.push('');\nlines.push('Drafts by status: ' + (Object.keys(byStatus).map(k => k + ' ' + byStatus[k]).join(', ') || 'none'));\nlines.push('Topics by status: ' + (Object.keys(topicStatus).map(k => k + ' ' + topicStatus[k]).join(', ') || 'none'));\nif (stale.length) lines.push('Waiting on approval > ' + cfg.stale_review_hours + 'h (' + stale.length + '): ' + stale.slice(0, 10).map(r => r.Content_ID + ' [' + r.Review_Status + ']').join(', '));\nif (blocked.length) lines.push('Blocked or failed (' + blocked.length + '): ' + blocked.slice(0, 10).map(r => r.Content_ID + ' [' + r.Review_Status + ']').join(', '));\nif (stuckTopics.length) lines.push('Topics that look stuck (' + stuckTopics.length + '): ' + stuckTopics.slice(0, 10).map(t => t.Topic).join(', '));\nif (fixes.length) lines.push('Auto-fixed: ' + fixes.length + ' row(s) stuck in Publishing were marked Publish Failed - check LinkedIn before retrying.');\n\nlet db = {};\ntry { db = $('Database Housekeeping').first().json || {}; } catch (e) { db = {}; }\nconst dbOk = db && db.spend_today_usd !== undefined && !db.error;\nconst asList = v => Array.isArray(v) ? v : (typeof v === 'string' && v.trim().startsWith('[') ? JSON.parse(v) : []);\nconst money = v => '$' + Number(v || 0).toFixed(4);\nconst overBudget = dbOk ? asList(db.over_budget) : [];\nconst nearBudget = dbOk ? asList(db.near_budget) : [];\nlines.push('');\nif (dbOk) {\n  lines.push('AI and research spend - today: ' + money(db.spend_today_usd) + ' across ' + (db.topics_charged_today || 0) + ' topic(s) | this week: ' + money(db.spend_week_usd));\n  lines.push('Topic slots in use: ' + (db.slots_busy || 0) + ' of 3');\n  if (Number(db.slots_freed || 0) > 0) lines.push('Auto-fixed: freed ' + db.slots_freed + ' expired topic slot(s): ' + db.freed_topics);\n  if (overBudget.length) lines.push('Over the per-topic budget (' + overBudget.length + '): ' + overBudget.slice(0, 10).map(b => b.post_id + ' ' + money(b.spent_usd) + '/' + money(b.budget_usd)).join(', '));\n  if (nearBudget.length) lines.push('Above 80% of budget (' + nearBudget.length + '): ' + nearBudget.slice(0, 10).map(b => b.post_id + ' ' + money(b.spent_usd)).join(', '));\n} else {\n  lines.push('Database check failed - spend, budgets and topic slots were not checked tonight' + (db.error ? ' (' + String(db.error.message || db.error).slice(0, 150) + ')' : '') + '.');\n}\nconst slotFixes = dbOk ? Number(db.slots_freed || 0) : 0;\nif (!stale.length && !blocked.length && !stuckTopics.length && !fixes.length && !slotFixes && !overBudget.length && dbOk) lines.push('No issues found.');\n\nreturn [{ json: { report: lines.join(NL), report_chat: String(cfg.report_chat || ''), fixes, fix_count: fixes.length } }];"
       },
-      "id": "7f5088af-951a-4e59-aea9-d48305f8e311",
+      "id": "a8dc3679-1a02-4d2a-bedd-810be31671db",
       "name": "Build Health Report",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -154,7 +166,7 @@
           "appendAttribution": false
         }
       },
-      "id": "2abbd305-cb4c-490f-99fc-e423dc67dad7",
+      "id": "4cbae67d-2150-44e2-a226-aebb7dc1e80f",
       "name": "Send Daily Report",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
@@ -162,14 +174,20 @@
         1024,
         128
       ],
-      "webhookId": "a4da1e95-df51-41d0-b078-a9cfd664aee4"
+      "webhookId": "a4da1e95-df51-41d0-b078-a9cfd664aee4",
+      "credentials": {
+        "telegramApi": {
+          "id": "fK43np4pmHkGxEkT",
+          "name": "Telegram account"
+        }
+      }
     },
     {
       "parameters": {
         "fieldToSplitOut": "fixes",
         "options": {}
       },
-      "id": "ca9c1424-006a-46d0-98a5-ed6d02c70516",
+      "id": "13d8e130-4f51-4937-b84a-7ef55504be8d",
       "name": "Split Stuck Rows",
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
@@ -245,7 +263,7 @@
         },
         "options": {}
       },
-      "id": "e4ccdf5f-7357-42cb-b629-eeb23982ce35",
+      "id": "1e6bac94-c98b-41e3-8382-7d3525789b62",
       "name": "Release Stuck Rows",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
@@ -343,36 +361,37 @@
   "active": false,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate"
+    "binaryMode": "separate",
+    "timezone": "Asia/Kolkata"
   },
-  "versionId": "d4c97c1e-a54f-49da-b3bf-4c8ba865c188",
+  "versionId": "5aafbfa7-12f9-4484-be60-0cbee16ad9d6",
   "meta": {
-    "instanceId": "4b9ab7222f68f7c22c472c177c357cad0d9bb60850d0276343313a2c5cf6978b"
+    "instanceId": "0214fd9dff6da45a20e17d6e666f96a9432aae7897d7aeeae66db311b3caa272"
   },
   "nodeGroups": [
     {
-      "id": "6ffcbb83-5a66-4dba-bccf-1cbe9cbc510b",
+      "id": "8867c707-ec11-4a25-b87f-61debf013946",
       "name": "Gather pipeline data",
       "nodeIds": [
-        "004594dd-d49f-490e-92ba-2473461a5be7",
-        "dcbe8d2f-9356-429c-a6e8-6910d58e3eb6",
-        "71d4189d-527c-4661-bbb7-8495b410014c",
-        "37e67bf2-563a-41df-ac4c-166172fd23cc"
+        "c62330f2-8207-4a53-900f-cbf514033d34",
+        "84605b97-369e-4b74-8161-0d397d9ae7f6",
+        "68e91ba6-4e2b-44e2-9c94-1a3b148ce6cb",
+        "1bac7da6-4f9c-46f3-8771-1f90f400d645"
       ],
       "description": "Every evening reads drafts and topics, frees expired topic slots, and pulls daily spend and budget overruns"
     },
     {
-      "id": "e98c1bd9-63a6-4f13-9ba6-850904f0c0dc",
+      "id": "e016e1bf-ee7f-4153-9701-8c93165963b8",
       "name": "Report and self-heal",
       "nodeIds": [
-        "7f5088af-951a-4e59-aea9-d48305f8e311",
-        "2abbd305-cb4c-490f-99fc-e423dc67dad7",
-        "ca9c1424-006a-46d0-98a5-ed6d02c70516",
-        "e4ccdf5f-7357-42cb-b629-eeb23982ce35"
+        "a8dc3679-1a02-4d2a-bedd-810be31671db",
+        "4cbae67d-2150-44e2-a226-aebb7dc1e80f",
+        "13d8e130-4f51-4937-b84a-7ef55504be8d",
+        "1e6bac94-c98b-41e3-8382-7d3525789b62"
       ],
       "description": "Sends the admin a pipeline health summary and frees posts stuck mid-publish so they can be retried safely"
     }
   ],
-  "id": "AZzOKYiZ4U368eDn",
+  "id": "1nrgg61oz9nHNh0Y",
   "tags": []
 }
