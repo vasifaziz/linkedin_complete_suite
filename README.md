@@ -20,7 +20,7 @@ We're designing a LinkedIn Complete Suite to automate the entire process, from g
 ![LinkedIn Content - DB Gateway](https://github.com/vasifaziz/linkedin_complete_suite/blob/b936ea07b2133b0ac4d369f6d26d8b2723e50a3c/LinkedIn%20Content%20-%20DB%20Gateway.png)
 
 ## LinkedIn Content - Daily Maintenance
-![LinkedIn Content - Daily Maintenance](https://github.com/vasifaziz/linkedin_complete_suite/blob/b936ea07b2133b0ac4d369f6d26d8b2723e50a3c/LinkedIn%20Content%20-%20Daily%20Maintenance.png)
+![LinkedIn Content - Daily Maintenance](https://github.com/vasifaziz/linkedin_complete_suite/blob/79776860ecee626077d78dece19bf3d46672260c/LinkedIn%20Content%20-%20Daily%20Maintenance.png) 
 
 ## LinkedIn Content - Database Setup
 ![LinkedIn Content - Database Setup](https://github.com/vasifaziz/linkedin_complete_suite/blob/b936ea07b2133b0ac4d369f6d26d8b2723e50a3c/LinkedIn%20Content%20-%20Database%20Setup.png)
